@@ -6,14 +6,15 @@ services:
     container_name: solara-music
     restart: unless-stopped
     ports:
-      - "3001:3001"  # 改为3001端口
+      - "3001:3001"  
     environment:
       - NODE_ENV=production
-      - PORT=3001    # 改为3001端口
+      - PORT=3001    
     volumes:
       - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001"]
       interval: 30s
       timeout: 10s
+
       retries: 3
