@@ -1,0 +1,84 @@
+/* Desktop-only overrides for mobile UI chrome */
+html.desktop-view .mobile-status-bar,
+html.desktop-view .mobile-toolbar,
+html.desktop-view .mobile-panel-header,
+html.desktop-view .mobile-overlay-scrim,
+html.desktop-view .mobile-quality-chip,
+html.desktop-view .mobile-close-btn,
+html.desktop-view .mobile-turntable__tonearm,
+html.desktop-view .mobile-turntable__label,
+html.desktop-view .mobile-inline-lyrics {
+    display: none;
+}
+
+/* Remove circular decoration from playlist action buttons on desktop */
+html.desktop-view .playlist-action-btn {
+    width: auto;
+    height: auto;
+    padding: 6px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    box-shadow: none;
+    color: var(--text-secondary-color);
+    transition: color 0.2s ease;
+}
+
+html.desktop-view body.dark-mode .playlist-action-btn {
+    background: none;
+    border: none;
+    box-shadow: none;
+    color: var(--text-secondary-color);
+}
+
+html.desktop-view .playlist-action-btn:hover:not(:disabled),
+html.desktop-view .playlist-action-btn:focus-visible:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+    filter: none;
+    border: none;
+    color: var(--primary-color);
+}
+
+html.desktop-view .playlist-action-btn--clear {
+    color: rgba(231, 76, 60, 0.85);
+}
+
+html.desktop-view .playlist-action-btn--clear:hover:not(:disabled),
+html.desktop-view .playlist-action-btn--clear:focus-visible:not(:disabled) {
+    color: var(--warning-color);
+}
+
+html.desktop-view .playlist-action-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+html.desktop-view .playlist-action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Keep the desktop search import button visible without an opaque bar */
+html.desktop-view .search-results {
+    gap: 0;
+}
+
+html.desktop-view .search-results-toolbar {
+    display: block;
+    padding: 0;
+    height: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+html.desktop-view .search-results-toolbar .import-selected-btn {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    pointer-events: auto;
+}
+
+html.desktop-view .search-results-list {
+    padding-top: 60px;
+}
