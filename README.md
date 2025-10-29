@@ -4,7 +4,7 @@
 
 部署方法：
  
-1. 在VPS上创建solara-music目录，这里我是在/opt目录下创建的
+1. 在VPS上创建solara-music目录，这里我是在/opt目录下创建的，将所有文件上传到solara-music文件夹中。
 
 2. 进入项目目录
 
