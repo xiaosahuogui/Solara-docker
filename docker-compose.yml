@@ -1,20 +1,38 @@
-version: '3.8'
-
 services:
   solara-music:
     build: .
     container_name: solara-music
     restart: unless-stopped
     ports:
-      - "3001:3001"  
+      - "3001:3001"
     environment:
       - NODE_ENV=production
-      - PORT=3001    
+      - PORT=3001
+      - REQUEST_TIMEOUT=30000
+      - MAX_RETRIES=3
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+      - 8.8.4.4
+      - 223.5.5.5
+      - 223.6.6.6
     volumes:
       - ./logs:/app/logs
+    networks:
+      - solara-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
       interval: 30s
       timeout: 10s
-
       retries: 3
+    # 可选：资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+networks:
+  solara-network:
+    driver: bridge
