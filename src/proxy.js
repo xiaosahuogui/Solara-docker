@@ -6,14 +6,54 @@ const API_BASE_URL = "https://music-api.gdstudio.xyz/api.php";
 const KUWO_HOST_PATTERN = /(^|\.)kuwo\.cn$/i;
 const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control", "accept-ranges", "content-length", "content-range", "etag", "last-modified", "expires"];
 
-function createCorsHeaders(init = {}) {
+// 请求配置
+const REQUEST_CONFIG = {
+  timeout: 30000, // 30秒超时
+  retries: 3,     // 重试3次
+  retryDelay: 1000 // 重试延迟1秒
+};
+
+// 带重试的 fetch 函数
+async function fetchWithRetry(url, options = {}, retries = REQUEST_CONFIG.retries, delay = REQUEST_CONFIG.retryDelay) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_CONFIG.timeout);
+    
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    if (retries > 0 && (error.name === 'AbortError' || error.code === 'ECONNRESET')) {
+      console.log(`请求失败，${delay}ms后重试... (剩余重试次数: ${retries})`, error.message);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2); // 指数退避
+    }
+    throw error;
+  }
+}
+
+// CORS 头函数
+const createCorsHeaders = (init = {}) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store',
     ...init
   };
   return headers;
-}
+};
+
+// 处理 OPTIONS 请求
+router.options('/', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.status(204).send();
+});
 
 function isAllowedKuwoHost(hostname) {
   if (!hostname) return false;
@@ -39,13 +79,14 @@ function normalizeKuwoUrl(rawUrl) {
 async function proxyKuwoAudio(targetUrl, req, res) {
   const normalized = normalizeKuwoUrl(targetUrl);
   if (!normalized) {
+    res.set(createCorsHeaders());
     return res.status(400).send('Invalid target');
   }
 
   const init = {
     method: req.method,
     headers: {
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
+      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Referer': 'https://www.kuwo.cn/',
     },
   };
@@ -56,7 +97,7 @@ async function proxyKuwoAudio(targetUrl, req, res) {
   }
 
   try {
-    const upstream = await fetch(normalized.toString(), init);
+    const upstream = await fetchWithRetry(normalized.toString(), init);
     
     const headers = createCorsHeaders();
     SAFE_RESPONSE_HEADERS.forEach(header => {
@@ -74,8 +115,13 @@ async function proxyKuwoAudio(targetUrl, req, res) {
     // 将响应流直接传输给客户端
     upstream.body.pipe(res);
   } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).send('Proxy error');
+    console.error('音频代理错误:', error.message);
+    res.set(createCorsHeaders());
+    res.status(500).json({ 
+      error: '代理错误',
+      message: error.message,
+      code: error.code
+    });
   }
 }
 
@@ -89,13 +135,14 @@ async function proxyApiRequest(req, res) {
   });
 
   if (!apiUrl.searchParams.has('types')) {
+    res.set(createCorsHeaders());
     return res.status(400).send('Missing types');
   }
 
   try {
-    const upstream = await fetch(apiUrl.toString(), {
+    const upstream = await fetchWithRetry(apiUrl.toString(), {
       headers: {
-        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
+        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json',
       },
     });
@@ -111,8 +158,14 @@ async function proxyApiRequest(req, res) {
     const data = await upstream.text();
     res.send(data);
   } catch (error) {
-    console.error('API proxy error:', error);
-    res.status(500).send('API proxy error');
+    console.error('API 代理错误:', error.message);
+    res.set(createCorsHeaders());
+    res.status(500).json({ 
+      error: 'API 代理错误',
+      message: error.message,
+      code: error.code,
+      url: apiUrl.toString()
+    });
   }
 }
 
@@ -124,14 +177,6 @@ router.get('/', async (req, res) => {
   }
 
   return proxyApiRequest(req, res);
-});
-
-router.options('/', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  res.status(204).send();
 });
 
 module.exports = router;
