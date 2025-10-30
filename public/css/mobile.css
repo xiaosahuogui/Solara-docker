@@ -4,8 +4,8 @@ html.mobile-view,
 body.mobile-view {
     background: radial-gradient(120% 140% at 50% 0%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 70%, rgba(255, 255, 255, 0.75) 100%);
     color: #1c1c1e;
-    height: var(--mobile-vh, 100dvh);
-    min-height: var(--mobile-vh, 100dvh);
+    height: 100%;
+    min-height: 100dvh;
     overflow: hidden;
     touch-action: pan-y;
     overscroll-behavior: none;
@@ -13,11 +13,11 @@ body.mobile-view {
 
 body.mobile-view {
     margin: 0;
-    min-height: var(--mobile-vh, 100dvh);
+    min-height: 100dvh;
     display: flex;
     justify-content: center;
-    align-items: center; /* 居中.container，确保上下圆角不溢出 */
-    padding: calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px) 8px; /* 上下左右边距均为2px + 安全区域 */
+    align-items: stretch;
+    padding: 0;
     font-family: var(--font-main);
     background-attachment: fixed;
     box-sizing: border-box;
@@ -78,26 +78,18 @@ body.mobile-view .container {
     width: 100%;
     max-width: 420px;
     background: rgba(255, 255, 255, 0.65);
-    border-radius: 32px;
+    border-radius: 0;
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    padding: clamp(16px, 5vw, 28px);
-    padding-top: clamp(18px, 6vw, 32px);
-    padding-bottom: clamp(22px, 7vw, 32px);
-    box-shadow:
-        0 32px 90px rgba(0, 0, 0, 0.15),
-        0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+    border: none;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
     display: flex;
     flex-direction: column;
     gap: clamp(12px, 4vw, 24px);
     position: relative;
-    overflow: visible;
+    overflow: hidden;
     flex: 1 1 auto;
-    min-height: calc(100% - 4px); /* 减去上下margin 2px * 2 */
-    height: calc(100% - 4px); /* 填充可用空间，确保圆角可见 */
-    margin-top: 2px; /* 最小化顶部边距 */
-    margin-bottom: 2px; /* 最小化底部边距 */
+    min-height: 100dvh;
     box-sizing: border-box;
 }
 
@@ -108,7 +100,7 @@ body.mobile-view .container::after {
     pointer-events: none;
     background: radial-gradient(100% 100% at 50% 0%, rgba(255, 255, 255, 0.4) 0%, transparent 65%);
     opacity: 0.8;
-    border-radius: 32px;
+    border-radius: 0;
 }
 
 body.mobile-view .header,
@@ -121,8 +113,9 @@ body.mobile-view .mobile-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: clamp(4px, 3vw, 12px);
+    margin-top: 8px;
     z-index: 2;
+    padding: 0 16px;
 }
 
 body.mobile-view .mobile-toolbar__title {
@@ -170,6 +163,7 @@ body.mobile-view .main-content {
     flex: 1 1 auto;
     justify-content: flex-start;
     min-height: 0;
+    padding: 0 16px;
 }
 
 body.mobile-view .cover-area {
@@ -416,13 +410,11 @@ body.mobile-view .controls {
     border: none;
     box-shadow: none;
     margin: 0;
-    padding: clamp(12px, 4vw, 24px);
-    padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
-    gap: clamp(16px, 5vw, 24px);
+    padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
+    gap: 16px;
     align-items: stretch;
     margin-top: auto;
-    position: sticky;
-    bottom: calc(env(safe-area-inset-bottom) + 24px);
+    position: relative;
     z-index: 10;
 }
 
@@ -564,33 +556,37 @@ body.mobile-view.mobile-panel-open .mobile-overlay-scrim {
     opacity: 1;
 }
 
+/* 重新设计播放列表面板 - 修复所有问题 */
 body.mobile-view .mobile-panel {
     position: fixed;
-    left: 50%;
-    transform: translate(-50%, 110%);
+    left: 8px;
+    right: 8px;
     bottom: 0;
-    width: min(100%, 420px);
-    background: rgba(255, 255, 255, 0.85);
+    transform: translateY(100%);
+    background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
-    border-radius: 28px 28px 0 0;
-    padding: 18px clamp(18px, 6vw, 28px) calc(env(safe-area-inset-bottom) + clamp(22px, 7vw, 32px));
+    border-radius: 20px 20px 0 0;
+    padding: 16px 16px calc(env(safe-area-inset-bottom) + 90px); /* 增加底部padding */
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
     z-index: 400;
     pointer-events: auto;
-    box-shadow: 0 -28px 60px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.25);
     transition: transform 0.45s cubic-bezier(0.33, 1, 0.68, 1);
-    height: calc(100dvh - clamp(120px, 34vw, 200px));
-    max-height: calc(100dvh - clamp(120px, 34vw, 200px));
+    height: 82vh;
+    max-height: 82vh;
     overflow: hidden;
     overscroll-behavior: contain;
     touch-action: pan-y;
+    width: calc(100% - 16px); /* 两侧留出8px边距 */
+    max-width: none;
+    box-sizing: border-box;
 }
 
 body.mobile-view.mobile-panel-open .mobile-panel {
-    transform: translate(-50%, 0);
+    transform: translateY(0);
 }
 
 body.mobile-view .mobile-panel-header {
@@ -607,7 +603,7 @@ body.mobile-view .mobile-panel-handle {
     height: 4px;
     border-radius: 999px;
     background: rgba(0, 0, 0, 0.3);
-    margin: 0 auto 10px;
+    margin: 0 auto 12px;
 }
 
 body.mobile-view .mobile-panel-title {
@@ -620,7 +616,7 @@ body.mobile-view .mobile-panel-actions {
     display: inline-flex;
     align-items: center;
     justify-self: end;
-    gap: 10px;
+    gap: 8px;
 }
 
 body.mobile-view .mobile-panel-action-btn,
@@ -628,8 +624,8 @@ body.mobile-view .mobile-close-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: 1px solid rgba(255, 255, 255, 0.6);
     background: rgba(255, 255, 255, 0.4);
@@ -705,6 +701,7 @@ body.mobile-view .lyrics-scroll {
     overscroll-behavior: contain;
     touch-action: pan-y;
     min-height: 0;
+    padding-bottom: 60px; /* 大幅增加底部内边距，确保最后一项完全不被遮挡 */
 }
 
 body.mobile-view .playlist-items {
@@ -796,7 +793,7 @@ body.mobile-view .search-area {
     transform: translateY(-100%);
     transition: transform 0.45s cubic-bezier(0.33, 1, 0.68, 1);
     z-index: 160;
-    padding: calc(env(safe-area-inset-top) + 28px) clamp(18px, 6vw, 28px) calc(env(safe-area-inset-bottom) + 24px);
+    padding: calc(env(safe-area-inset-top) + 28px) 16px calc(env(safe-area-inset-bottom) + 24px);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -955,5 +952,19 @@ body.mobile-view .debug-info {
         width: 56px;
         height: 56px;
         border-radius: 50%;
+    }
+    
+    body.mobile-view .mobile-panel {
+        height: 78vh;
+        max-height: 78vh;
+        padding-bottom: calc(env(safe-area-inset-bottom) + 80px);
+        left: 6px;
+        right: 6px;
+        width: calc(100% - 12px);
+    }
+    
+    body.mobile-view .playlist-scroll,
+    body.mobile-view .lyrics-scroll {
+        padding-bottom: 50px;
     }
 }
