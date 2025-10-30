@@ -18,8 +18,9 @@ RUN chown -R nextjs:nodejs /app
 USER nextjs
 
 # 暴露端口
-EXPOSE 3001  # 暴露3001端口
+EXPOSE 3001
 
 # 启动应用
 
 CMD ["npm", "start"]
+
