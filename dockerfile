@@ -21,6 +21,4 @@ USER nextjs
 EXPOSE 3001
 
 # 启动应用
-
 CMD ["npm", "start"]
-
