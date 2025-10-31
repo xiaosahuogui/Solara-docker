@@ -1,4 +1,5 @@
 const express = require('express');
+const fetch = require('node-fetch');
 const router = express.Router();
 
 // 简化的调色板功能，不依赖 palette-core
@@ -33,32 +34,57 @@ function buildPalette(buffer, contentType) {
   });
 }
 
+// CORS 头函数
+const createCorsHeaders = (init = {}) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store',
+    ...init
+  };
+  return headers;
+};
+
+const createJsonHeaders = (status) => {
+  return createCorsHeaders({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': status === 200 ? 'public, max-age=3600' : 'no-store'
+  });
+};
+
+// 处理 OPTIONS 请求
+router.options('/', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.status(204).send();
+});
+
 router.get('/', async (req, res) => {
   try {
     const imageParam = req.query.image || req.query.url;
     
     if (!imageParam) {
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json; charset=utf-8'
-      });
-      return res.status(400).json({ error: 'Missing image parameter' });
+      res.set(createJsonHeaders(400));
+      return res.json({ error: 'Missing image parameter' });
     }
 
     let target;
     try {
       target = new URL(imageParam);
     } catch {
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json; charset=utf-8'
-      });
-      return res.status(400).json({ error: 'Invalid image URL' });
+      res.set(createJsonHeaders(400));
+      return res.json({ error: 'Invalid image URL' });
     }
 
     // 模拟获取图片数据
     try {
-      const upstreamResponse = await fetch(target.toString());
+      const upstreamResponse = await fetch(target.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      
       if (!upstreamResponse.ok) {
         throw new Error(`HTTP ${upstreamResponse.status}`);
       }
@@ -72,37 +98,19 @@ router.get('/', async (req, res) => {
       const palette = await buildPalette(null, contentType);
       palette.source = target.toString();
 
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600'
-      });
-      
+      res.set(createJsonHeaders(200));
       return res.json(palette);
+      
     } catch (error) {
       console.error('Image processing error:', error);
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json; charset=utf-8'
-      });
-      return res.status(500).json({ error: 'Failed to process image' });
+      res.set(createJsonHeaders(500));
+      return res.json({ error: 'Failed to process image' });
     }
   } catch (error) {
     console.error('Unexpected error:', error);
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Content-Type': 'application/json; charset=utf-8'
-    });
-    return res.status(500).json({ error: 'Internal server error' });
+    res.set(createJsonHeaders(500));
+    return res.json({ error: 'Internal server error' });
   }
-});
-
-router.options('/', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  res.status(204).send();
 });
 
 module.exports = router;
