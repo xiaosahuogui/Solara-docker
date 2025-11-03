@@ -66,6 +66,27 @@ const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
 const MAX_RADAR_OFFSET = 1000; // 最大雷达偏移量，对应10页结果（10×100=1000条）
 const MAX_SEARCH_PAGES = 10; // 最大搜索页数
 
+// 在文件开头的常量定义部分添加屏蔽关键词配置
+const BLOCKED_KEYWORDS = [
+    "Cover", "cover", "COVER", "翻唱", "Cover:", "cover:", "COVER:",
+    "Remix", "remix", "REMIX", "混音", "Remix:", "remix:", "REMIX:",
+    "Live", "live", "LIVE", "现场", "演唱会", "Live:", "live:", "LIVE:",
+    "合集", "精选", "串烧", "DJ", "dj", "D.J.",
+    "播客", "Podcast", "podcast", "PODCAST",
+    "伴奏", "纯音乐", "Instrumental", "instrumental",
+    "Demo", "demo", "DEMO", "试听",
+    "自制", "铃声", "手机铃声", "网友自制",
+    "教学", "教程", "练习",
+    "片段", "剪辑", "剪切",
+    "非原唱", "不是原唱",
+    "伴奏版", "纯音乐版"
+];
+// 在 state 对象之前添加
+let mobilePanelState = {
+    isOpen: false,
+    currentView: null,
+    isTransitioning: false
+};
 window.SolaraDom = dom;
 
 const isMobileView = Boolean(window.__SOLARA_IS_MOBILE);
@@ -161,6 +182,10 @@ function forceCloseMobilePanelOverlay() {
         return;
     }
     document.body.classList.remove("mobile-panel-open");
+    // 添加状态同步
+    mobilePanelState.isOpen = false;
+    mobilePanelState.currentView = null;
+    mobilePanelState.isTransitioning = false;
     syncMobileOverlayVisibility();
 }
 
@@ -178,29 +203,73 @@ function toggleMobileSearch() {
     return invokeMobileHook("toggleSearch");
 }
 
+// 完全替换这两个函数
 function openMobilePanel(view = "playlist") {
+    debugLog(`请求打开移动端面板: ${view}, 当前状态: ${mobilePanelState.isOpen ? '打开' : '关闭'}`);
+    // 如果已经打开同一个视图，则关闭
+    if (mobilePanelState.isOpen && mobilePanelState.currentView === view) {
+        debugLog("已经打开相同视图，执行关闭");
+        closeMobilePanel();
+        return;
+    }
+    
+    // 更新状态
+    mobilePanelState.isOpen = true;
+    mobilePanelState.currentView = view;
+    mobilePanelState.isTransitioning = false; // 不再使用过渡状态阻塞
+    
+    // 立即更新UI
+    if (isMobileView && document.body) {
+        document.body.classList.add("mobile-panel-open");
+        document.body.setAttribute("data-mobile-panel-view", view);
+    }
+    
+    // 切换视图
+    switchMobileView(view);
+    
+    // 调用移动端桥接
     const result = invokeMobileHook("openPanel", view);
+    
     // 如果是播放列表视图，添加自动滚动
     if (view === "playlist") {
         debugLog("移动端打开播放列表面板，准备自动滚动");
-        // 确保播放列表视图已激活后再滚动
         setTimeout(() => {
             if (dom.playlist && dom.playlist.classList.contains("active")) {
                 scrollToCurrentPlaylistItem();
-            } else {
-                debugLog("播放列表视图未激活，延迟滚动");
-                setTimeout(() => {
-                    scrollToCurrentPlaylistItem();
-                }, 100);
             }
-        }, 350);
+        }, 150);
     }
+    
+    debugLog(`移动端面板已打开: ${view}`);
     return result;
 }
 
 function closeMobilePanel() {
+    debugLog(`请求关闭移动端面板, 当前状态: ${document.body.classList.contains("mobile-panel-open") ? '打开' : '关闭'}`);
+    
+    // 直接检查DOM状态，而不是依赖内部状态变量
+    if (!document.body.classList.contains("mobile-panel-open")) {
+        debugLog("面板已经关闭，忽略重复关闭");
+        return;
+    }
+    
+    // 更新内部状态
+    mobilePanelState.isOpen = false;
+    const previousView = mobilePanelState.currentView;
+    mobilePanelState.currentView = null;
+    mobilePanelState.isTransitioning = false;
+    
+    // 更新DOM
+    document.body.classList.remove("mobile-panel-open");
+    document.body.removeAttribute("data-mobile-panel-view");
+    
+    // 调用移动端桥接
     const result = invokeMobileHook("closePanel");
-    runAfterOverlayFrame(forceCloseMobilePanelOverlay);
+    debugLog("移动端面板已关闭");
+    
+    // 添加额外调试
+    debugLog(`关闭后状态: panelOpen=${document.body.classList.contains("mobile-panel-open")}`);
+    
     return result;
 }
 
@@ -442,7 +511,7 @@ const RADAR_KEYWORDS = [
     // 歌曲风格
     "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "蓝调",
     "轻音乐", "流行摇滚", "独立音乐", "民谣摇滚", "电子舞曲",
-    "轻爵士", "放克", "灵魂乐", "新世纪音乐", "电影原声", "动漫音乐",
+    "轻爵士", "Funk", "灵魂乐", "新世纪音乐", "电影原声", "动漫音乐",
     "乡村", "雷鬼", "世界音乐", "舞曲", "Bossa Nova", "流行R&B",
     "嘻哈", "拉丁", "古典流行", "氛围音乐", "钢琴流行", "爵士摇滚",
     "灵魂R&B", "电子流行", "独立流行", "另类摇滚", "后摇滚",
@@ -451,8 +520,8 @@ const RADAR_KEYWORDS = [
     "周杰伦", "邓紫棋", "李健", "毛不易", "薛之谦", "张韶涵", "王心凌",
     "赵雷", "张含韵", "SHE", "林俊杰", "蔡依林", "王力宏", "五月天",
     "张靓颖", "李荣浩", "田馥甄", "林宥嘉", "张杰", "周深", "任贤齐",
-    "张信哲", "费玉清", "那英", "张惠妹", "黄子韬", "刀郎", "腾格尔",
-    "陈奕迅", "容祖儿", "李宇春", "李玉刚", "米津玄师", "易烊千玺", "TFBOYS",
+    "张信哲", "费玉清", "张惠妹", "黄子韬", "刀郎", "腾格尔",
+    "陈奕迅", "容祖儿", "李宇春", "李玉刚", "米津玄师", "易烊千玺",
     "周华健", "刘德华", "张学友", "陈慧娴", "林志炫", "莫文蔚", "潘玮柏",
 
     // 国际热门歌手
@@ -468,7 +537,7 @@ const RADAR_KEYWORDS = [
     "Red Hot Chili Peppers", "Foo Fighters", "Queen", "The Beatles",
     "Michael Jackson", "Elton John", "Madonna", "Whitney Houston",
     "Celine Dion", "BTS", "BLACKPINK", "EXO", "TWICE", "BIGBANG", "SEVENTEEN",
-    "NCT", "ITZY", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa"
+    "NCT", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa"
 ];
 
 
@@ -603,7 +672,9 @@ const API = {
         }
     },
 
+    
 
+    
     search: async (keyword, source = "kuwo", count = 50, page = 1) => {
         const signature = API.generateSignature();
         const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
@@ -702,6 +773,32 @@ const API = {
 
 Object.freeze(API);
 
+// 新增：歌曲过滤函数
+function filterBlockedSongs(songs) {
+    if (!Array.isArray(songs) || songs.length === 0) {
+        return [];
+    }
+
+    return songs.filter(song => {
+        if (!song || typeof song !== 'object') return false;
+        
+        const songName = String(song.name || '').toLowerCase();
+        const artistName = Array.isArray(song.artist) 
+            ? song.artist.join(' ').toLowerCase()
+            : String(song.artist || '').toLowerCase();
+        const albumName = String(song.album || '').toLowerCase();
+
+        // 检查是否包含任何屏蔽关键词
+        const hasBlockedKeyword = BLOCKED_KEYWORDS.some(keyword => {
+            const lowerKeyword = keyword.toLowerCase();
+            return songName.includes(lowerKeyword) || 
+                   artistName.includes(lowerKeyword) || 
+                   albumName.includes(lowerKeyword);
+        });
+
+        return !hasBlockedKeyword;
+    });
+}
 // 雷达偏移量初始化
 const savedRadarOffset = (() => {
     const stored = safeGetLocalStorage("radarOffset");
@@ -2389,6 +2486,25 @@ function setupInteractions() {
             toggleMobileInlineLyrics();
         });
     }
+    // 在 setupInteractions 函数中添加面板关闭按钮的事件处理
+    if (dom.mobilePanelClose) {
+        dom.mobilePanelClose.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            debugLog("面板关闭按钮被点击");
+            closeMobilePanel();
+        });
+    }
+
+    // 添加遮罩层点击关闭
+    if (dom.mobileOverlayScrim) {
+        dom.mobileOverlayScrim.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            debugLog("遮罩层被点击，关闭所有面板");
+            closeAllMobileOverlays();
+        });
+    }
 
     if (isMobileView && dom.mobileInlineLyrics) {
         dom.mobileInlineLyrics.addEventListener("click", (event) => {
@@ -2434,32 +2550,82 @@ function setupInteractions() {
         dom.mobileExportPlaylistBtn.addEventListener("click", exportPlaylist);
     }
 
-    if (dom.showPlaylistBtn) {
-        dom.showPlaylistBtn.addEventListener("click", () => {
-            if (isMobileView) {
+    // 新增辅助函数：检查移动端面板状态
+function getMobilePanelState() {
+    if (!isMobileView || !document.body) {
+        return { isOpen: false, currentView: null };
+    }
+    
+    // 直接从 DOM 状态读取，确保与实际显示一致
+    const isOpen = document.body.classList.contains("mobile-panel-open");
+    const currentView = document.body.getAttribute("data-mobile-panel-view");
+    
+    // 同时更新内部状态保持同步
+    mobilePanelState.isOpen = isOpen;
+    mobilePanelState.currentView = currentView;
+    
+    return { isOpen, currentView };
+}
+
+
+// 使用新函数简化播放列表按钮逻辑
+if (dom.showPlaylistBtn) {
+    dom.showPlaylistBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        debugLog("播放列表按钮被点击");
+        if (isMobileView) {
+            // 直接从DOM读取当前状态，确保与UI一致
+            const isPanelOpen = document.body.classList.contains("mobile-panel-open");
+            const currentView = document.body.getAttribute("data-mobile-panel-view");
+            debugLog(`DOM状态检查: panelOpen=${isPanelOpen}, currentView=${currentView}`);
+            
+            // 如果面板已打开且当前是播放列表视图，则关闭
+            if (isPanelOpen && currentView === "playlist") {
+                debugLog("播放列表面板已打开，执行关闭");
+                closeMobilePanel();
+            } 
+            // 如果面板已打开但当前是其他视图（如歌词），则切换到播放列表
+            else if (isPanelOpen && currentView !== "playlist") {
+                debugLog("面板已打开但视图不是播放列表，切换到播放列表");
                 openMobilePanel("playlist");
-                // 移动端延迟滚动，等待面板动画完成
-                setTimeout(() => {
-                    scrollToCurrentPlaylistItem();
-                }, 400);
-            } else {
-                switchMobileView("playlist");
-                // 桌面端立即滚动，确保播放列表视图已激活
-                setTimeout(() => {
-                    scrollToCurrentPlaylistItem();
-                }, 100);
+            } 
+            // 面板未打开，打开播放列表
+            else {
+                debugLog("面板未打开，打开播放列表");
+                openMobilePanel("playlist");
             }
-        });
-    }
-    if (dom.showLyricsBtn) {
-        dom.showLyricsBtn.addEventListener("click", () => {
-            if (isMobileView) {
+        } else {
+            // 桌面端逻辑
+            switchMobileView("playlist");
+            setTimeout(() => {
+                scrollToCurrentPlaylistItem();
+            }, 100);
+        }
+    });
+}
+
+if (dom.showLyricsBtn) {
+    dom.showLyricsBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        debugLog("歌词按钮被点击");
+        
+        if (isMobileView) {
+            // 使用新的状态管理
+            if (mobilePanelState.isOpen && mobilePanelState.currentView === "lyrics") {
+                debugLog("歌词面板已打开，执行关闭");
+                closeMobilePanel();
+            } else {
+                debugLog("歌词面板未打开，执行打开");
                 openMobilePanel("lyrics");
-            } else {
-                switchMobileView("lyrics");
             }
-        });
-    }
+        } else {
+            // 桌面端逻辑
+            switchMobileView("lyrics");
+        }
+    });
+}
 
     // 播放模式按钮事件
     updatePlayModeUI();
@@ -4120,35 +4286,29 @@ async function autoPlayNext() {
 
 // 检查并自动添加雷达歌曲
 async function checkAndAutoAddRadarSongs() {
-    // 只有当当前播放列表是雷达探索添加的歌曲时才自动添加
     if (state.currentPlaylist !== "playlist" || state.playlistSongs.length === 0) {
         return;
     }
 
-    // 检查是否接近播放列表末尾（剩余3首以内）
     const remainingSongs = state.playlistSongs.length - state.currentTrackIndex - 1;
     if (remainingSongs <= 3) {
         debugLog(`播放列表即将结束，剩余 ${remainingSongs} 首歌曲，自动添加雷达歌曲`);
         
         try {
-            // 从备选关键词中随机选择两个不同的关键词
             const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
             const keyword1 = shuffledKeywords[0];
             const keyword2 = shuffledKeywords[1];
             
-            // 使用随机偏移量，范围扩大到0-999
             const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
             state.radarOffset = randomOffset;
             
             debugLog(`自动添加雷达歌曲，使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
 
-            // 使用两个关键词分别搜索，使用更大的页面长度
             const [results1, results2] = await Promise.all([
                 API.search(keyword1, "kuwo", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
                 API.search(keyword2, "kuwo", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
             ]);
 
-            // 合并并去重搜索结果
             const allResults = [...(results1 || []), ...(results2 || [])];
             const uniqueResults = allResults.filter((song, index, self) => 
                 index === self.findIndex(s => 
@@ -4156,8 +4316,12 @@ async function checkAndAutoAddRadarSongs() {
                 )
             );
 
-            if (uniqueResults.length > 0) {
-                // 去重处理（与现有播放列表比较）
+            // 新增：应用屏蔽关键词过滤
+            const filteredResults = filterBlockedSongs(uniqueResults);
+            debugLog(`自动添加雷达过滤结果: 原始 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
+
+            // 位置 3：修改这里 - 使用 filteredResults 判断
+            if (filteredResults.length > 0) {
                 const existingKeys = new Set(
                     state.playlistSongs
                         .map(getSongKey)
@@ -4165,7 +4329,8 @@ async function checkAndAutoAddRadarSongs() {
                 );
 
                 const uniqueSongs = [];
-                for (const song of uniqueResults) {
+                // 这里已经是使用 filteredResults 循环了
+                for (const song of filteredResults) {
                     const key = getSongKey(song);
                     if (!key || !existingKeys.has(key)) {
                         uniqueSongs.push(song);
@@ -4175,18 +4340,16 @@ async function checkAndAutoAddRadarSongs() {
                     }
                 }
 
-                // 随机打乱歌曲顺序
                 const shuffledSongs = [...uniqueSongs].sort(() => Math.random() - 0.5);
-                
-                // 添加最多20首去重后的歌曲到播放列表
                 const songsToAdd = shuffledSongs.slice(0, 20);
                 
                 if (songsToAdd.length > 0) {
                     state.playlistSongs = [...state.playlistSongs, ...songsToAdd];
                     renderPlaylist();
                     
-                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲 (关键词: ${keyword1}, ${keyword2}, 随机偏移量: ${randomOffset})`);
-                    showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲`, "success");
+                    const filteredCount = uniqueResults.length - filteredResults.length;
+                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲, 过滤 ${filteredCount} 首 (关键词: ${keyword1}, ${keyword2}, 随机偏移量: ${randomOffset})`);
+                    showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲${filteredCount > 0 ? ` (过滤 ${filteredCount} 首)` : ''}`);
                 }
             }
         } catch (error) {
@@ -4305,18 +4468,18 @@ async function exploreOnlineMusic() {
         btnText.style.display = "none";
         loader.style.display = "inline-block";
 
-        // 从备选关键词中随机选择两个不同的关键词，增加多样性
+        // 从备选关键词中随机选择两个不同的关键词
         const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
         const keyword1 = shuffledKeywords[0];
         const keyword2 = shuffledKeywords[1];
         
-        // 使用随机偏移量，范围扩大到0-999
+        // 使用随机偏移量
         const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
         state.radarOffset = randomOffset;
         
         debugLog(`探索雷达使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
 
-        // 使用两个关键词分别搜索，使用更大的页面长度
+        // 使用两个关键词分别搜索
         const [results1, results2] = await Promise.all([
             API.search(keyword1, "kuwo", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
             API.search(keyword2, "kuwo", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
@@ -4330,16 +4493,22 @@ async function exploreOnlineMusic() {
             )
         );
 
-        if (uniqueResults.length > 0) {
+        // 新增：应用屏蔽关键词过滤
+        const filteredResults = filterBlockedSongs(uniqueResults);
+        debugLog(`探索雷达过滤结果: 原始 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
+
+        // 位置 1：修改这里 - 使用 filteredResults 判断
+        if (filteredResults.length > 0) {
             // 去重处理（与现有播放列表比较）
             const existingKeys = new Set(
                 state.playlistSongs
                     .map(getSongKey)
-                    .filter(key => typeof key === "string" && key !== "")
+                    .filter((key) => typeof key === "string" && key !== "")
             );
 
             const uniqueSongs = [];
-            for (const song of uniqueResults) {
+            // 位置 2：修改这里 - 使用 filteredResults 循环
+            for (const song of filteredResults) {
                 const key = getSongKey(song);
                 if (!key || !existingKeys.has(key)) {
                     uniqueSongs.push(song);
@@ -4349,7 +4518,7 @@ async function exploreOnlineMusic() {
                 }
             }
 
-            // 随机打乱歌曲顺序，增加多样性
+            // 随机打乱歌曲顺序
             const shuffledSongs = [...uniqueSongs].sort(() => Math.random() - 0.5);
             
             // 添加最多30首去重后的歌曲到播放列表
@@ -4362,8 +4531,10 @@ async function exploreOnlineMusic() {
                 // 更新播放列表显示
                 renderPlaylist();
 
-                showNotification(`探索雷达: 已添加 ${songsToAdd.length} 首歌曲 (关键词: ${keyword1}, ${keyword2})`);
-                debugLog(`探索雷达成功: 关键词 "${keyword1}", "${keyword2}", 随机偏移量 ${randomOffset}, 添加 ${songsToAdd.length} 首歌曲`);
+                const filteredCount = uniqueResults.length - filteredResults.length;
+                const filterMessage = filteredCount > 0 ? ` (已过滤 ${filteredCount} 首)` : '';
+                showNotification(`探索雷达: 已添加 ${songsToAdd.length} 首歌曲${filterMessage} (关键词: ${keyword1}, ${keyword2})`);
+                debugLog(`探索雷达成功: 关键词 "${keyword1}", "${keyword2}", 随机偏移量 ${randomOffset}, 添加 ${songsToAdd.length} 首歌曲, 过滤 ${filteredCount} 首`);
 
                 // 自动播放第一首新添加的歌曲
                 if (songsToAdd.length > 0) {
@@ -4376,7 +4547,7 @@ async function exploreOnlineMusic() {
                 showNotification("探索雷达: 没有找到新的歌曲", "warning");
             }
         } else {
-            showNotification("探索雷达: 未找到相关歌曲", "error");
+            showNotification("探索雷达: 未找到相关歌曲或所有结果已被过滤", "error");
         }
     } catch (error) {
         console.error("探索雷达失败:", error);
@@ -4389,16 +4560,24 @@ async function exploreOnlineMusic() {
 }
 
 // 替换原来的 loadLyrics 函数
+// 替换原来的 loadLyrics 函数
 async function loadLyrics(song) {
     const tryLyricId = async (lyricId) => {
         try {
             const url = API.getLyric({ ...song, lyric_id: lyricId });
             const data = await API.fetchJson(url);
             let text = null;
-            if (typeof data === 'string') text = data;
-            else if (data) text = data.lyric || data.lrc || data.content || data.data;
+            
+            // 增强数据结构兼容性
+            if (typeof data === 'string') {
+                text = data;
+            } else if (data) {
+                text = data.lyric || data.lrc || data.content || data.data || 
+                       data.klyric || data.tlyric || data.romalrc; // 添加更多可能的字段
+            }
             return text?.trim() || null;
         } catch (e) {
+            console.warn(`尝试歌词ID ${lyricId} 失败:`, e);
             return null;
         }
     };
@@ -4406,11 +4585,18 @@ async function loadLyrics(song) {
     try {
         // 优先尝试 lyric_id
         let lyricText = await tryLyricId(song.lyric_id);
+        
         // 失败则尝试 song.id
         if (!lyricText && song.id !== song.lyric_id) {
             lyricText = await tryLyricId(song.id);
         }
-        // 还失败则尝试 artist + name 拼接（某些平台支持）
+        
+        // 还失败则尝试其他可能的ID字段
+        if (!lyricText && song.songId && song.songId !== song.id) {
+            lyricText = await tryLyricId(song.songId);
+        }
+        
+        // 最后尝试 artist + name 拼接
         if (!lyricText) {
             const fallbackId = `${song.artist}_${song.name}`.replace(/[^\w]/g, '_');
             lyricText = await tryLyricId(fallbackId);
@@ -4420,12 +4606,14 @@ async function loadLyrics(song) {
             parseLyrics(lyricText);
             dom.lyrics.classList.remove("empty");
             dom.lyrics.dataset.placeholder = "default";
+            debugLog(`歌词加载成功: ${song.name}`);
         } else {
             setLyricsContentHtml("<div>暂无歌词</div>");
             dom.lyrics.classList.add("empty");
             dom.lyrics.dataset.placeholder = "message";
             state.lyricsData = [];
             state.currentLyricLine = -1;
+            debugLog(`未找到歌词: ${song.name}`);
         }
     } catch (error) {
         console.error("加载歌词失败:", error);
@@ -4434,21 +4622,28 @@ async function loadLyrics(song) {
         dom.lyrics.dataset.placeholder = "message";
         state.lyricsData = [];
         state.currentLyricLine = -1;
+        debugLog(`歌词加载异常: ${error.message}`);
     }
 }
 
-// 修复：解析歌词
 // 修复：解析歌词 - 增强格式兼容性（完整版）
+// 替换原来的 parseLyrics 函数
+// 完全替换 parseLyrics 函数
 function parseLyrics(lyricText) {
     const lines = lyricText.split('\n');
     const lyrics = [];
     let hasValidLyrics = false;
 
+    // 预处理：合并连续的无时间戳行，并正确处理多行歌词
+    const processedLines = [];
+    let currentTime = null;
+    let currentText = [];
+    
     lines.forEach(line => {
         line = line.trim();
         if (!line) return;
 
-        // 支持多种时间戳格式
+        // 检查是否是时间戳行
         const timeFormats = [
             /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/,  // [mm:ss.xxx]text
             /\[(\d{2}):(\d{2}):(\d{2,3})\](.*)/,   // [mm:ss:xxx]text
@@ -4456,6 +4651,7 @@ function parseLyrics(lyricText) {
             /\[(\d{1,2}):(\d{2})\.(\d{2,3})\](.*)/, // [m:ss.xxx]text
             /\[(\d{1,2}):(\d{2})\](.*)/             // [m:ss]text
         ];
+        
         let match = null;
         for (const pattern of timeFormats) {
             match = line.match(pattern);
@@ -4463,48 +4659,117 @@ function parseLyrics(lyricText) {
         }
 
         if (match) {
+            // 如果之前有累积的文本，先保存
+            if (currentTime !== null && currentText.length > 0) {
+                processedLines.push({
+                    time: currentTime,
+                    text: currentText.join('\n')
+                });
+                currentText = [];
+            }
+            
+            // 解析时间戳
             let minutes, seconds, milliseconds = 0;
             if (match[3] !== undefined) {
-                // 格式包含毫秒
                 minutes = parseInt(match[1], 10);
                 seconds = parseInt(match[2], 10);
                 milliseconds = parseInt(match[3].padEnd(3, '0'), 10);
             } else {
-                // 格式不包含毫秒
                 minutes = parseInt(match[1], 10);
                 seconds = parseInt(match[2], 10);
             }
-            const time = minutes * 60 + seconds + milliseconds / 1000;
+            currentTime = minutes * 60 + seconds + milliseconds / 1000;
+            
+            // 提取文本
             const text = match[match.length - 1].trim();
             if (text && text !== '//' && !text.startsWith('//')) {
-                lyrics.push({ time, text });
-                hasValidLyrics = true;
+                currentText.push(text);
             }
         } else if (line.includes('[') && line.includes(']')) {
-            // 跳过元数据行（如 [ar:xxx], [ti:xxx]）
+            // 跳过元数据行
             debugLog(`跳过元数据行: ${line}`);
-        } else if (line.trim()) {
-            // 处理无时间戳的纯文本行
-            const lastLyric = lyrics[lyrics.length - 1];
-            if (lastLyric) {
-                // 附加到上一行（避免断句）
-                lastLyric.text += '\n' + line;
-            } else {
-                // 如果是第一行且无时间戳，创建一个 0 秒的条目
-                lyrics.push({ time: 0, text: line });
-                hasValidLyrics = true;
-            }
+        } else if (line.trim() && currentTime !== null) {
+            // 无时间戳的行，累积到当前时间点
+            currentText.push(line.trim());
         }
     });
+    
+    // 处理最后累积的内容
+    if (currentTime !== null && currentText.length > 0) {
+        processedLines.push({
+            time: currentTime,
+            text: currentText.join('\n')
+        });
+    }
+
+    // 如果没有处理出有效行，尝试备选解析方法
+    if (processedLines.length === 0) {
+        debugLog("标准解析失败，尝试备选解析方法");
+        
+        // 备选方法：逐行处理，不合并
+        lines.forEach(line => {
+            line = line.trim();
+            if (!line) return;
+
+            const timeFormats = [
+                /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/,
+                /\[(\d{2}):(\d{2}):(\d{2,3})\](.*)/,
+                /\[(\d{2}):(\d{2})\](.*)/,
+                /\[(\d{1,2}):(\d{2})\.(\d{2,3})\](.*)/,
+                /\[(\d{1,2}):(\d{2})\](.*)/
+            ];
+            
+            let match = null;
+            for (const pattern of timeFormats) {
+                match = line.match(pattern);
+                if (match) break;
+            }
+
+            if (match) {
+                let minutes, seconds, milliseconds = 0;
+                if (match[3] !== undefined) {
+                    minutes = parseInt(match[1], 10);
+                    seconds = parseInt(match[2], 10);
+                    milliseconds = parseInt(match[3].padEnd(3, '0'), 10);
+                } else {
+                    minutes = parseInt(match[1], 10);
+                    seconds = parseInt(match[2], 10);
+                }
+                const time = minutes * 60 + seconds + milliseconds / 1000;
+                const text = match[match.length - 1].trim();
+                
+                if (text && text !== '//' && !text.startsWith('//')) {
+                    processedLines.push({ time, text });
+                    hasValidLyrics = true;
+                }
+            }
+        });
+    } else {
+        hasValidLyrics = processedLines.length > 0;
+    }
 
     if (hasValidLyrics) {
-        // 有有效带时间戳歌词：排序并显示
-        state.lyricsData = lyrics.sort((a, b) => a.time - b.time);
+        // 排序并去重（按时间）
+        const uniqueLyrics = [];
+        const timeSet = new Set();
+        
+        processedLines
+            .sort((a, b) => a.time - b.time)
+            .forEach(item => {
+                // 允许相同时间点的不同歌词（这种情况很少见，但可能发生）
+                const key = `${item.time}-${item.text}`;
+                if (!timeSet.has(key)) {
+                    timeSet.add(key);
+                    uniqueLyrics.push(item);
+                }
+            });
+        
+        state.lyricsData = uniqueLyrics;
         displayLyrics();
-        debugLog(`解析歌词成功: ${lyrics.length} 行`);
+        debugLog(`解析歌词成功: ${uniqueLyrics.length} 行`);
     } else {
-        // 完全没有有效时间戳：显示原始文本（保留换行）
-        const cleanText = lyricText.trim().replace(/\n\s*\n/g, '\n');
+        // 完全没有有效时间戳：显示原始文本
+        const cleanText = lyricText.trim();
         if (cleanText) {
             setLyricsContentHtml(`<div class="lyrics-plain">${cleanText.replace(/\n/g, '<br>')}</div>`);
             dom.lyrics.classList.remove("empty");
@@ -4540,9 +4805,12 @@ function clearLyricsContent() {
 
 // 修复：显示歌词
 function displayLyrics() {
-    const lyricsHtml = state.lyricsData.map((lyric, index) =>
-        `<div data-time="${lyric.time}" data-index="${index}">${lyric.text}</div>`
-    ).join("");
+    const lyricsHtml = state.lyricsData.map((lyric, index) => {
+        // 将文本中的换行符转换为HTML换行，并保留原始格式
+        const formattedText = lyric.text.replace(/\n/g, '<br>');
+        return `<div data-time="${lyric.time}" data-index="${index}">${formattedText}</div>`;
+    }).join("");
+    
     setLyricsContentHtml(lyricsHtml);
     if (dom.lyrics) {
         dom.lyrics.dataset.placeholder = "default";
