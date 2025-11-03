@@ -61,6 +61,11 @@ const dom = {
     searchArea: document.getElementById("searchArea"),
 };
 
+// 新增搜索配置常量
+const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
+const MAX_RADAR_OFFSET = 1000; // 最大雷达偏移量，对应10页结果（10×100=1000条）
+const MAX_SEARCH_PAGES = 10; // 最大搜索页数
+
 window.SolaraDom = dom;
 
 const isMobileView = Boolean(window.__SOLARA_IS_MOBILE);
@@ -544,6 +549,35 @@ const API = {
             throw error;
         }
     },
+
+    search: async (keyword, source = "kuwo", count = SEARCH_PAGE_SIZE, page = 1) => {
+        const signature = API.generateSignature();
+        // 修改：使用动态页面大小
+        const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
+
+        try {
+            debugLog(`API请求: ${url}`);
+            const data = await API.fetchJson(url);
+            debugLog(`API响应: 获取到 ${Array.isArray(data) ? data.length : 0} 条结果`);
+
+            if (!Array.isArray(data)) throw new Error("搜索结果格式错误");
+
+            return data.map(song => ({
+                id: song.id,
+                name: song.name,
+                artist: song.artist,
+                album: song.album,
+                pic_id: song.pic_id,
+                url_id: song.url_id,
+                lyric_id: song.lyric_id,
+                source: song.source,
+            }));
+        } catch (error) {
+            debugLog(`API错误: ${error.message}`);
+            throw error;
+        }
+    },
+
 
     search: async (keyword, source = "kuwo", count = 50, page = 1) => {
         const signature = API.generateSignature();
@@ -2709,7 +2743,7 @@ async function performSearch(isLiveSearch = false) {
         debugLog("已切换到搜索模式");
 
         // 执行搜索
-        const results = await API.search(query, source, 50, state.searchPage);
+        const results = await API.search(query, source, SEARCH_PAGE_SIZE, state.searchPage);
         debugLog(`API返回结果数量: ${results.length}`);
 
         if (state.searchPage === 1) {
@@ -2761,13 +2795,13 @@ async function loadMoreResults() {
         loadMoreBtn.disabled = true;
         loadMoreBtn.innerHTML = '<span class="loader"></span><span>加载中...</span>';
 
-        state.searchPage++;
+         state.searchPage++;
         debugLog(`加载第 ${state.searchPage} 页结果`);
 
         const source = normalizeSource(state.searchSource);
         state.searchSource = source;
         safeSetLocalStorage("searchSource", source);
-        const results = await API.search(state.searchKeyword, source, 50, state.searchPage);
+        const results = await API.search(state.searchKeyword, source, SEARCH_PAGE_SIZE, state.searchPage);
 
         if (results.length > 0) {
             state.searchResults = [...state.searchResults, ...results];
@@ -4072,31 +4106,33 @@ async function checkAndAutoAddRadarSongs() {
         debugLog(`播放列表即将结束，剩余 ${remainingSongs} 首歌曲，自动添加雷达歌曲`);
         
         try {
-            // 从备选关键词中随机选择一个
-            const randomKeyword = RADAR_KEYWORDS[Math.floor(Math.random() * RADAR_KEYWORDS.length)];
+            // 从备选关键词中随机选择两个不同的关键词
+            const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
+            const keyword1 = shuffledKeywords[0];
+            const keyword2 = shuffledKeywords[1];
             
-            // 计算动态偏移量：每次增加20，如果超过200则重置为0
-            const currentOffset = state.radarOffset;
-            let nextOffset;
+            // 使用随机偏移量，范围扩大到0-999
+            const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
+            state.radarOffset = randomOffset;
             
-            // 如果播放列表为空，使用随机偏移量来确保每次获取不同的歌曲
-            if (state.playlistSongs.length === 0) {
-                nextOffset = Math.floor(Math.random() * 200); // 随机偏移量0-199
-                debugLog(`播放列表为空，使用随机偏移量: ${nextOffset} (对应页码: ${Math.floor(nextOffset / 50) + 1})`);
-            } else {
-                nextOffset = (currentOffset + 20) % 200; // 限制在200以内，避免超出API限制
-                debugLog(`播放列表不为空，使用递增偏移量: ${nextOffset} (对应页码: ${Math.floor(nextOffset / 50) + 1})`);
-            }
-            
-            state.radarOffset = nextOffset;
-            
-            debugLog(`自动添加雷达歌曲，使用关键词: ${randomKeyword}, 偏移量: ${nextOffset}`);
+            debugLog(`自动添加雷达歌曲，使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
 
-            // 使用酷我音源进行搜索，使用动态偏移量
-            const searchResults = await API.search(randomKeyword, "kuwo", 50, Math.floor(nextOffset / 50) + 1);
+            // 使用两个关键词分别搜索，使用更大的页面长度
+            const [results1, results2] = await Promise.all([
+                API.search(keyword1, "kuwo", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
+                API.search(keyword2, "kuwo", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
+            ]);
 
-            if (searchResults.length > 0) {
-                // 去重处理
+            // 合并并去重搜索结果
+            const allResults = [...(results1 || []), ...(results2 || [])];
+            const uniqueResults = allResults.filter((song, index, self) => 
+                index === self.findIndex(s => 
+                    s.id === song.id && s.source === song.source
+                )
+            );
+
+            if (uniqueResults.length > 0) {
+                // 去重处理（与现有播放列表比较）
                 const existingKeys = new Set(
                     state.playlistSongs
                         .map(getSongKey)
@@ -4104,7 +4140,7 @@ async function checkAndAutoAddRadarSongs() {
                 );
 
                 const uniqueSongs = [];
-                for (const song of searchResults) {
+                for (const song of uniqueResults) {
                     const key = getSongKey(song);
                     if (!key || !existingKeys.has(key)) {
                         uniqueSongs.push(song);
@@ -4114,22 +4150,19 @@ async function checkAndAutoAddRadarSongs() {
                     }
                 }
 
+                // 随机打乱歌曲顺序
+                const shuffledSongs = [...uniqueSongs].sort(() => Math.random() - 0.5);
+                
                 // 添加最多20首去重后的歌曲到播放列表
-                const songsToAdd = uniqueSongs.slice(0, 20);
+                const songsToAdd = shuffledSongs.slice(0, 20);
                 
                 if (songsToAdd.length > 0) {
                     state.playlistSongs = [...state.playlistSongs, ...songsToAdd];
                     renderPlaylist();
                     
-                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲 (关键词: ${randomKeyword}, 偏移量: ${nextOffset})`);
+                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲 (关键词: ${keyword1}, ${keyword2}, 随机偏移量: ${randomOffset})`);
                     showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲`, "success");
-                } else {
-                    // 如果没有找到新歌曲，回退偏移量
-                    state.radarOffset = currentOffset;
                 }
-            } else {
-                // 如果没有搜索结果，回退偏移量
-                state.radarOffset = currentOffset;
             }
         } catch (error) {
             console.error("自动添加雷达歌曲失败:", error);
@@ -4137,7 +4170,6 @@ async function checkAndAutoAddRadarSongs() {
         }
     }
 }
-
 // 修复：播放下一首 - 支持播放模式和统一播放列表
 function playNext() {
     let nextIndex = -1;
@@ -4248,31 +4280,33 @@ async function exploreOnlineMusic() {
         btnText.style.display = "none";
         loader.style.display = "inline-block";
 
-        // 从备选关键词中随机选择一个
-        const randomKeyword = RADAR_KEYWORDS[Math.floor(Math.random() * RADAR_KEYWORDS.length)];
+        // 从备选关键词中随机选择两个不同的关键词，增加多样性
+        const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
+        const keyword1 = shuffledKeywords[0];
+        const keyword2 = shuffledKeywords[1];
         
-        // 计算动态偏移量：每次增加20，如果超过200则重置为0
-        const currentOffset = state.radarOffset;
-        let nextOffset;
+        // 使用随机偏移量，范围扩大到0-999
+        const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
+        state.radarOffset = randomOffset;
         
-        // 如果播放列表为空，使用随机偏移量来确保每次获取不同的歌曲
-        if (state.playlistSongs.length === 0) {
-            nextOffset = Math.floor(Math.random() * 200); // 随机偏移量0-199
-            debugLog(`播放列表为空，使用随机偏移量: ${nextOffset} (对应页码: ${Math.floor(nextOffset / 50) + 1})`);
-        } else {
-            nextOffset = (currentOffset + 20) % 200; // 限制在200以内，避免超出API限制
-            debugLog(`播放列表不为空，使用递增偏移量: ${nextOffset} (对应页码: ${Math.floor(nextOffset / 50) + 1})`);
-        }
-        
-        state.radarOffset = nextOffset;
-        
-        debugLog(`探索雷达使用随机关键词: ${randomKeyword}, 偏移量: ${nextOffset}`);
+        debugLog(`探索雷达使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
 
-        // 使用酷我音源进行搜索，使用动态偏移量
-        const searchResults = await API.search(randomKeyword, "kuwo", 50, Math.floor(nextOffset / 50) + 1);
+        // 使用两个关键词分别搜索，使用更大的页面长度
+        const [results1, results2] = await Promise.all([
+            API.search(keyword1, "kuwo", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
+            API.search(keyword2, "kuwo", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
+        ]);
 
-        if (searchResults.length > 0) {
-            // 去重处理
+        // 合并并去重搜索结果
+        const allResults = [...(results1 || []), ...(results2 || [])];
+        const uniqueResults = allResults.filter((song, index, self) => 
+            index === self.findIndex(s => 
+                s.id === song.id && s.source === song.source
+            )
+        );
+
+        if (uniqueResults.length > 0) {
+            // 去重处理（与现有播放列表比较）
             const existingKeys = new Set(
                 state.playlistSongs
                     .map(getSongKey)
@@ -4280,7 +4314,7 @@ async function exploreOnlineMusic() {
             );
 
             const uniqueSongs = [];
-            for (const song of searchResults) {
+            for (const song of uniqueResults) {
                 const key = getSongKey(song);
                 if (!key || !existingKeys.has(key)) {
                     uniqueSongs.push(song);
@@ -4290,8 +4324,11 @@ async function exploreOnlineMusic() {
                 }
             }
 
-            // 添加最多20首去重后的歌曲到播放列表
-            const songsToAdd = uniqueSongs.slice(0, 20);
+            // 随机打乱歌曲顺序，增加多样性
+            const shuffledSongs = [...uniqueSongs].sort(() => Math.random() - 0.5);
+            
+            // 添加最多30首去重后的歌曲到播放列表
+            const songsToAdd = shuffledSongs.slice(0, 30);
             
             if (songsToAdd.length > 0) {
                 state.playlistSongs = [...state.playlistSongs, ...songsToAdd];
@@ -4300,10 +4337,10 @@ async function exploreOnlineMusic() {
                 // 更新播放列表显示
                 renderPlaylist();
 
-                showNotification(`探索雷达: 已添加 ${songsToAdd.length} 首歌曲 (关键词: ${randomKeyword})`);
-                debugLog(`探索雷达成功: 关键词 "${randomKeyword}", 偏移量 ${nextOffset}, 添加 ${songsToAdd.length} 首歌曲`);
+                showNotification(`探索雷达: 已添加 ${songsToAdd.length} 首歌曲 (关键词: ${keyword1}, ${keyword2})`);
+                debugLog(`探索雷达成功: 关键词 "${keyword1}", "${keyword2}", 随机偏移量 ${randomOffset}, 添加 ${songsToAdd.length} 首歌曲`);
 
-                // 自动播放第一首
+                // 自动播放第一首新添加的歌曲
                 if (songsToAdd.length > 0) {
                     const newIndex = state.playlistSongs.length - songsToAdd.length;
                     state.currentTrackIndex = newIndex;
@@ -4312,13 +4349,9 @@ async function exploreOnlineMusic() {
                 }
             } else {
                 showNotification("探索雷达: 没有找到新的歌曲", "warning");
-                // 如果没有找到新歌曲，回退偏移量
-                state.radarOffset = currentOffset;
             }
         } else {
             showNotification("探索雷达: 未找到相关歌曲", "error");
-            // 如果没有搜索结果，回退偏移量
-            state.radarOffset = currentOffset;
         }
     } catch (error) {
         console.error("探索雷达失败:", error);
@@ -4765,7 +4798,7 @@ window.getRadarOffset = function() {
 
 // 新增：设置雷达偏移量
 window.setRadarOffset = function(offset) {
-    const newOffset = Math.max(0, Math.min(offset, 200)); // 限制在0-200之间
+    const newOffset = Math.max(0, Math.min(offset, MAX_RADAR_OFFSET - 1)); // 限制在0-999之间
     state.radarOffset = newOffset;
     savePlayerState();
     showNotification(`雷达偏移量已设置为 ${newOffset}`, "success");
