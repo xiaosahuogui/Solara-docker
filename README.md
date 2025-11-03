@@ -19,7 +19,7 @@ docker compose up -d
 5. 查看日志
 docker compose logs -f
 
-探索雷达功能做了修改，默认使用kuwo搜索20首音乐自动播放，播放列表快结束时静默添加歌曲。歌曲关键词库在/public/js/index.js文件中,找到 const RADAR_KEYWORDS 即可以自行修改。
+探索雷达功能做了修改，默认使用kuwo搜索两个关键词，筛选30首音乐自动播放，播放列表快结束时静默添加20首歌曲。歌曲关键词库在/public/js/index.js文件中,找到 const RADAR_KEYWORDS 即可自行修改。
 
 部署完可以使用自己的域名反向代理 http://127.0.0.1:3001
 
