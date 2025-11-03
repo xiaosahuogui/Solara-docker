@@ -19,7 +19,9 @@ docker compose up -d
 5. 如果修改了文件需要重新部署
    
 docker compose down
+
 compose build --no-cache
+
 docker compose up -d
 
 探索雷达功能做了修改，默认使用kuwo搜索两个关键词，筛选30首音乐自动播放，播放列表快结束时静默添加20首歌曲。歌曲关键词库在/public/js/index.js文件中,找到 const RADAR_KEYWORDS 即可自行修改。
