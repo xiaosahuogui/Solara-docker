@@ -968,3 +968,182 @@ body.mobile-view .debug-info {
         padding-bottom: 50px;
     }
 }
+/* 强制歌词多行显示 - 修复长文本截断问题 */
+body.mobile-view .mobile-inline-lyrics__content div,
+body.mobile-view .mobile-inline-lyrics__content div[data-index] {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    -webkit-hyphens: auto !important;
+    -moz-hyphens: auto !important;
+    hyphens: auto !important;
+    line-height: 1.5 !important;
+    padding: 8px 12px !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    display: block !important;
+}
+
+/* 确保当前歌词行完整显示 */
+body.mobile-view .mobile-inline-lyrics__content .current {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    line-height: 1.6 !important;
+    padding: 10px 14px !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    display: block !important;
+}
+
+/* 修复歌词面板中的多行文本 */
+body.mobile-view .lyrics-content > div,
+body.mobile-view .lyrics-content div[data-index] {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    line-height: 1.6 !important;
+    padding: 10px 16px !important;
+    margin: 4px 0 !important;
+    text-align: center !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    display: block !important;
+}
+
+/* 歌词面板中的当前歌词行 */
+body.mobile-view .lyrics-content .current {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    line-height: 1.7 !important;
+    padding: 12px 18px !important;
+    margin: 6px 0 !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    display: block !important;
+}
+
+/* 确保歌词滚动容器允许内容扩展 */
+body.mobile-view .mobile-inline-lyrics__scroll,
+body.mobile-view .lyrics-scroll {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+}
+
+/* 确保歌词内容区域可以自由扩展 */
+body.mobile-view .mobile-inline-lyrics__content,
+body.mobile-view .lyrics-content {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+}
+
+/* 特别处理英文长歌词 - 强制断词 */
+body.mobile-view .mobile-inline-lyrics__content div[data-index],
+body.mobile-view .lyrics-content div[data-index] {
+    -webkit-line-break: after-white-space !important;
+    line-break: loose !important;
+    word-spacing: normal !important;
+    letter-spacing: normal !important;
+}
+
+/* 处理内嵌歌词容器的高度限制 */
+body.mobile-view .mobile-inline-lyrics {
+    min-height: min(78vw, 320px) !important;
+    height: auto !important;
+    max-height: 85vh !important;
+}
+
+/* 移除任何可能限制文本显示的属性 */
+body.mobile-view .mobile-inline-lyrics__content div,
+body.mobile-view .lyrics-content div {
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: unset !important;
+    display: -webkit-box !important;
+    overflow: visible !important;
+}
+
+/* 确保在移动端面板中歌词也能完整显示 */
+body.mobile-view.mobile-panel-open .lyrics-content div,
+body.mobile-view.mobile-panel-open .lyrics-content div[data-index] {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    line-height: 1.6 !important;
+    padding: 12px 16px !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+}
+
+/* 在小屏幕上确保歌词仍然完整显示 */
+@media (max-width: 375px) {
+    body.mobile-view .mobile-inline-lyrics__content div[data-index],
+    body.mobile-view .lyrics-content div[data-index] {
+        font-size: clamp(0.85rem, 4vw, 1rem) !important;
+        line-height: 1.5 !important;
+        padding: 8px 10px !important;
+    }
+    
+    body.mobile-view .mobile-inline-lyrics__content .current,
+    body.mobile-view .lyrics-content .current {
+        padding: 10px 12px !important;
+        line-height: 1.6 !important;
+    }
+    
+    body.mobile-view .mobile-inline-lyrics {
+        min-height: min(80vw, 300px) !important;
+        height: auto !important;
+        max-height: 80vh !important;
+    }
+}
+/* 在 mobile.css 文件的最后，在之前添加的歌词样式之后添加以下代码 */
+
+/* 强制歌词多行显示 - 修复长文本截断问题 */
+body.mobile-view .mobile-inline-lyrics__content div[data-index],
+body.mobile-view .lyrics-content div[data-index] {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    line-height: 1.5 !important;
+    padding: 8px 12px !important;
+    min-height: auto !important;
+    height: auto !important;
+    display: block !important;
+}
+
+/* 特别处理包含换行符的歌词 */
+body.mobile-view .mobile-inline-lyrics__content div[data-index] br,
+body.mobile-view .lyrics-content div[data-index] br {
+    content: "" !important;
+    display: block !important;
+    margin: 4px 0 !important;
+    height: 0 !important;
+}
