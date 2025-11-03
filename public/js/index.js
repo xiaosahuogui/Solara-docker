@@ -439,13 +439,38 @@ const SOURCE_OPTIONS = [
 
 // 备选关键词列表
 const RADAR_KEYWORDS = [
-    "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "古典",
-    "轻音乐", "古风", "华语", "欧美", "日韩", "粤语", "经典老歌",
-    "新歌", "90年代", "抖音热歌", "网络歌曲", "影视原声", "游戏音乐",
-    "纯音乐", "钢琴曲", "吉他", "小提琴", "bossa nova", "古典乐",
+    // 歌曲风格
+    "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "蓝调",
+    "轻音乐", "流行摇滚", "独立音乐", "民谣摇滚", "电子舞曲",
+    "轻爵士", "放克", "灵魂乐", "新世纪音乐", "电影原声", "动漫音乐",
+    "乡村", "雷鬼", "世界音乐", "舞曲", "Bossa Nova", "流行R&B",
+    "嘻哈", "拉丁", "古典流行", "氛围音乐", "钢琴流行", "爵士摇滚",
+    "灵魂R&B", "电子流行", "独立流行", "另类摇滚", "后摇滚",
+
+    // 国内热门歌手
     "周杰伦", "邓紫棋", "李健", "毛不易", "薛之谦", "张韶涵", "王心凌",
-	"赵雷", "张含韵", "SHE"
+    "赵雷", "张含韵", "SHE", "林俊杰", "蔡依林", "王力宏", "五月天",
+    "张靓颖", "李荣浩", "田馥甄", "林宥嘉", "张杰", "周深", "任贤齐",
+    "张信哲", "费玉清", "那英", "张惠妹", "黄子韬", "刀郎", "腾格尔",
+    "陈奕迅", "容祖儿", "李宇春", "李玉刚", "米津玄师", "易烊千玺", "TFBOYS",
+    "周华健", "刘德华", "张学友", "陈慧娴", "林志炫", "莫文蔚", "潘玮柏",
+
+    // 国际热门歌手
+    "Taylor Swift", "Ed Sheeran", "Adele", "Beyoncé", "Justin Bieber",
+    "Billie Eilish", "Bruno Mars", "Ariana Grande", "Shawn Mendes",
+    "Dua Lipa", "Coldplay", "Maroon 5", "The Weeknd", "Lady Gaga",
+    "Rihanna", "Kanye West", "Drake", "Post Malone", "Imagine Dragons",
+    "Alicia Keys", "Sam Smith", "Selena Gomez", "Harry Styles",
+    "One Direction", "Katy Perry", "Nicki Minaj", "Camila Cabello",
+    "Halsey", "Charlie Puth", "Shakira", "P!nk", "Sia", "Avicii",
+    "Calvin Harris", "David Guetta", "Zedd", "Martin Garrix", "Kygo",
+    "Marshmello", "Alan Walker", "Coldplay", "Linkin Park", "Green Day",
+    "Red Hot Chili Peppers", "Foo Fighters", "Queen", "The Beatles",
+    "Michael Jackson", "Elton John", "Madonna", "Whitney Houston",
+    "Celine Dion", "BTS", "BLACKPINK", "EXO", "TWICE", "BIGBANG", "SEVENTEEN",
+    "NCT", "ITZY", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa"
 ];
+
 
 function normalizeSource(value) {
     const allowed = SOURCE_OPTIONS.map(option => option.value);
