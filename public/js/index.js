@@ -63,8 +63,8 @@ const dom = {
 
 // 新增搜索配置常量
 const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
-const MAX_RADAR_OFFSET = 1000; // 最大雷达偏移量，对应10页结果（10×100=1000条）
-const MAX_SEARCH_PAGES = 10; // 最大搜索页数
+const MAX_RADAR_OFFSET = 500; // 最大雷达偏移量，对应5页结果（5×100=500条）
+const MAX_SEARCH_PAGES = 5; // 最大搜索页数
 
 // 在文件开头的常量定义部分添加屏蔽关键词配置
 const BLOCKED_KEYWORDS = [
