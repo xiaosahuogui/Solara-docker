@@ -28,7 +28,7 @@ docker compose up -d
 1. 探索雷达功能做了修改，默认使用kuwo搜索两个关键词，筛选30首音乐自动播放，播放列表快结束时静默添加20首歌曲。
 2. 探索雷达的歌曲关键词库在/public/js/index.js文件中,找到 const RADAR_KEYWORDS 即可自行修改。
 3. 由于我不喜欢听remix和翻唱，探索雷达搜索结果添加了屏蔽关键词库，在index.js中找到
-   const BLOCKED_KEYWORDS 可自行修改，如果不想使用这个功能，可以留空，设置为：
+      const BLOCKED_KEYWORDS 可自行修改，如果不想使用这个功能，可以留空，设置为：
 
 const BLOCKED_KEYWORDS = [
     // 清空所有关键词，这样就不会过滤任何歌曲
