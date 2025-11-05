@@ -1,4 +1,4 @@
-基于https://github.com/akudamatata/Solara项目进行修改
+基于https://github.com/akudamatata/Solara  项目进行修改
 
 使用Dockerfile进行部署，可以部署在VPS上，默认监听3001端口。
 
