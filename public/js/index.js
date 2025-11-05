@@ -63,8 +63,8 @@ const dom = {
 
 // 新增搜索配置常量
 const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
-const MAX_RADAR_OFFSET = 500; // 最大雷达偏移量，对应5页结果（5×100=500条）
-const MAX_SEARCH_PAGES = 5; // 最大搜索页数
+const MAX_RADAR_OFFSET = 200; // 最大雷达偏移量，对应2页结果（2×100=200条）
+const MAX_SEARCH_PAGES = 2; // 最大搜索页数
 
 // 在文件开头的常量定义部分添加音质等级配置
 const QUALITY_LEVELS = [
