@@ -9,6 +9,7 @@
 2. 进入项目目录
 
 cd /opt/solara-music
+
 3. 打开docker-compose.yml,
 修改以下两项内容：
 - SOLARA_PASSWORD=solara123  # 修改为你的密码
