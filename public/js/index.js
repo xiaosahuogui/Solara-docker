@@ -519,7 +519,7 @@ const RADAR_KEYWORDS = [
     // 歌曲风格
     "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "蓝调",
     "轻音乐", "流行摇滚", "独立音乐", "民谣摇滚", "电子舞曲",
-    "轻爵士", "Funk", "灵魂乐", "新世纪音乐", "电影原声", "动漫音乐",
+    "轻爵士", "Funk", "Soul Music", "新世纪音乐", "电影原声", "动漫音乐",
     "乡村", "雷鬼", "世界音乐", "舞曲", "Bossa Nova", "流行R&B",
     "嘻哈", "拉丁", "古典流行", "氛围音乐", "钢琴流行", "爵士摇滚",
     "灵魂R&B", "电子流行", "独立流行", "另类摇滚", "后摇滚",
@@ -729,6 +729,7 @@ async function playSong(song, options = {}) {
 // 添加播放错误处理函数
 function handlePlaybackError(song, error) {
     stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
     
     state.qualityRetryCount++;
     debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}`);
@@ -738,6 +739,14 @@ function handlePlaybackError(song, error) {
         debugLog(`达到最大重试次数，切换到下一首歌曲`);
         showNotification(`无法播放 ${song.name}，自动切换下一首`, 'warning');
         resetQualityState();
+        
+        // 切换到下一首前，先更新歌曲信息
+        const nextSong = getNextSong();
+        if (nextSong) {
+            state.currentSong = nextSong;
+            updateCurrentSongInfo(nextSong, { loadArtwork: true });
+        }
+        
         playNext();
         return;
     }
@@ -764,8 +773,40 @@ function handlePlaybackError(song, error) {
         debugLog(`无更低音质可用，切换到下一首歌曲`);
         showNotification(`所有音质均无法播放 ${song.name}，自动切换下一首`, 'error');
         resetQualityState();
+        
+        // 切换到下一首前，先更新歌曲信息
+        const nextSong = getNextSong();
+        if (nextSong) {
+            state.currentSong = nextSong;
+            updateCurrentSongInfo(nextSong, { loadArtwork: true });
+        }
+        
         playNext();
     }
+}
+
+// 新增辅助函数：获取下一首歌曲
+function getNextSong() {
+    let playlist = [];
+    let nextIndex = -1;
+
+    if (state.currentPlaylist === "playlist") {
+        playlist = state.playlistSongs;
+    } else if (state.currentPlaylist === "online") {
+        playlist = state.onlineSongs;
+    } else if (state.currentPlaylist === "search") {
+        playlist = state.searchResults;
+    }
+
+    if (playlist.length === 0) return null;
+
+    if (state.playMode === "random") {
+        nextIndex = Math.floor(Math.random() * playlist.length);
+    } else {
+        nextIndex = (state.currentTrackIndex + 1) % playlist.length;
+    }
+
+    return playlist[nextIndex] || null;
 }
 
 function normalizeQuality(value) {
@@ -4876,6 +4917,13 @@ async function autoPlayNext() {
     // 检查是否需要自动添加雷达歌曲
     await checkAndAutoAddRadarSongs();
 
+    // 在播放下一首前更新歌曲信息
+    const nextSong = getNextSong();
+    if (nextSong) {
+        state.currentSong = nextSong;
+        updateCurrentSongInfo(nextSong, { loadArtwork: true });
+    }
+    
     playNext();
     updatePlayPauseButton();
 }
@@ -4980,6 +5028,13 @@ function playNext() {
 
     state.currentTrackIndex = nextIndex;
 
+    // 立即更新当前歌曲信息
+    const nextSong = playlist[nextIndex];
+    if (nextSong) {
+        state.currentSong = nextSong;
+        updateCurrentSongInfo(nextSong, { loadArtwork: true });
+    }
+
     if (state.currentPlaylist === "playlist") {
         playPlaylistSong(nextIndex);
     } else if (state.currentPlaylist === "online") {
@@ -5015,6 +5070,13 @@ function playPrevious() {
     }
 
     state.currentTrackIndex = prevIndex;
+
+    // 立即更新当前歌曲信息
+    const prevSong = playlist[prevIndex];
+    if (prevSong) {
+        state.currentSong = prevSong;
+        updateCurrentSongInfo(prevSong, { loadArtwork: true });
+    }
 
     if (state.currentPlaylist === "playlist") {
         playPlaylistSong(prevIndex);
