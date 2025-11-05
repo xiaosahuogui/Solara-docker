@@ -9,14 +9,18 @@
 2. 进入项目目录
 
 cd /opt/solara-music
+3. 打开docker-compose.yml,
+修改以下两项内容：
+- SOLARA_PASSWORD=solara123  # 修改为你的密码
+- SESSION_SECRET=KLmlKDruIBRYjrT5ct7B3xqG25ZF2p59    # 修改为随机字符串
 
-3. 构建项目
+4. 构建项目
 docker compose build
 
-4. 启动服务
+5. 启动服务
 docker compose up -d
 
-5. 如果修改了文件需要重新部署
+6. 如果修改了文件需要重新部署
    
 docker compose down
 
@@ -35,6 +39,8 @@ const BLOCKED_KEYWORDS = [
 ];
 
 4. 搜索结果界面添加了播放全部按钮，可以一键播放页面已加载的所有歌曲。
+5. 添加密码验证，只有输入密码登录才能使用。
+6. 音质选项改为设置默认播放音质，播放歌曲时如果使用默认音质播放失败或者检测到播放进度卡住，歌曲会自动切换到低一等级的音质，如果没有能够播放的音质，播放下一首，并使用默认音质继续播放。
 
 
 部署完可以使用自己的域名反向代理 http://127.0.0.1:3001
