@@ -66,6 +66,14 @@ const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
 const MAX_RADAR_OFFSET = 500; // 最大雷达偏移量，对应5页结果（5×100=500条）
 const MAX_SEARCH_PAGES = 5; // 最大搜索页数
 
+// 在文件开头的常量定义部分添加音质等级配置
+const QUALITY_LEVELS = [
+    { value: "999", label: "无损音质", description: "FLAC", level: 4 },
+    { value: "320", label: "极高音质", description: "320 kbps", level: 3 },
+    { value: "192", label: "高品音质", description: "192 kbps", level: 2 },
+    { value: "128", label: "标准音质", description: "128 kbps", level: 1 }
+];
+
 // 在文件开头的常量定义部分添加屏蔽关键词配置
 const BLOCKED_KEYWORDS = [
     "Cover", "cover", "COVER", "翻唱", "Cover:", "cover:", "COVER:",
@@ -74,7 +82,7 @@ const BLOCKED_KEYWORDS = [
     "合集", "精选", "串烧", "DJ", "dj", "D.J.",
     "播客", "Podcast", "podcast", "PODCAST",
     "伴奏", "纯音乐", "Instrumental", "instrumental",
-    "Demo", "demo", "DEMO", "试听",
+    "Demo", "demo", "DEMO", "试听", "原唱", "翻奏",
     "自制", "铃声", "手机铃声", "网友自制",
     "教学", "教程", "练习",
     "片段", "剪辑", "剪切",
@@ -546,15 +554,220 @@ function normalizeSource(value) {
     return allowed.includes(value) ? value : SOURCE_OPTIONS[0].value;
 }
 
-const QUALITY_OPTIONS = [
-    { value: "128", label: "标准音质", description: "128 kbps" },
-    { value: "192", label: "高品音质", description: "192 kbps" },
-    { value: "320", label: "极高音质", description: "320 kbps" },
-    { value: "999", label: "无损音质", description: "FLAC" }
-];
+// 修改 QUALITY_OPTIONS 使用新的音质等级
+const QUALITY_OPTIONS = QUALITY_LEVELS;
+
+// 添加音质切换相关函数
+function getCurrentQualityLevel() {
+    const currentQuality = state.currentQualityAttempt || state.playbackQuality;
+    return QUALITY_LEVELS.find(q => q.value === currentQuality) || QUALITY_LEVELS[2]; // 默认返回极高音质
+}
+
+function getNextLowerQuality(currentQuality) {
+    const currentLevel = QUALITY_LEVELS.find(q => q.value === currentQuality)?.level || 3;
+    const nextQuality = QUALITY_LEVELS.find(q => q.level === currentLevel - 1);
+    return nextQuality ? nextQuality.value : null;
+}
+
+function getLowestQuality() {
+    return QUALITY_LEVELS[QUALITY_LEVELS.length - 1].value;
+}
+
+function resetQualityState() {
+    state.currentQualityAttempt = state.playbackQuality;
+    state.qualityRetryCount = 0;
+    state.isAutoQualitySwitching = false;
+    state.playbackStuckCount = 0;
+    state.isPlaybackStuck = false;
+    stopPlaybackMonitoring();
+    debugLog(`音质状态重置: 当前尝试音质=${state.currentQualityAttempt}, 重试次数=${state.qualityRetryCount}`);
+}
+
+// 修改 playSong 函数，添加音质自动切换逻辑
+async function playSong(song, options = {}) {
+    const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
+
+    // 如果不是重试，重置音质状态
+    if (!isRetry) {
+        resetQualityState();
+    }
+
+    window.clearTimeout(pendingPaletteTimer);
+    state.audioReadyForPalette = false;
+    state.pendingPaletteData = null;
+    state.pendingPaletteImage = null;
+    state.pendingPaletteImmediate = false;
+    state.pendingPaletteReady = false;
+
+    try {
+        updateCurrentSongInfo(song, { loadArtwork: false });
+
+        const currentQuality = state.currentQualityAttempt;
+        const audioUrl = API.getSongUrl(song, currentQuality);
+        debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 重试次数: ${state.qualityRetryCount}`);
+
+        const audioData = await API.fetchJson(audioUrl);
+
+        if (!audioData || !audioData.url) {
+            throw new Error('无法获取音频播放地址');
+        }
+
+        const originalAudioUrl = audioData.url;
+        const proxiedAudioUrl = buildAudioProxyUrl(originalAudioUrl);
+        const preferredAudioUrl = preferHttpsUrl(originalAudioUrl);
+        const candidateAudioUrls = Array.from(
+            new Set([proxiedAudioUrl, preferredAudioUrl, originalAudioUrl].filter(Boolean))
+        );
+
+        const primaryAudioUrl = candidateAudioUrls[0] || originalAudioUrl;
+
+        if (proxiedAudioUrl && proxiedAudioUrl !== originalAudioUrl) {
+            debugLog(`音频地址已通过代理转换为 HTTPS: ${proxiedAudioUrl}`);
+        } else if (preferredAudioUrl && preferredAudioUrl !== originalAudioUrl) {
+            debugLog(`音频地址由 HTTP 升级为 HTTPS: ${preferredAudioUrl}`);
+        }
+
+        state.currentSong = song;
+        state.currentAudioUrl = null;
+
+        dom.audioPlayer.pause();
+
+        if (!preserveProgress) {
+            state.currentPlaybackTime = 0;
+            state.lastSavedPlaybackTime = 0;
+            safeSetLocalStorage('currentPlaybackTime', '0');
+        } else if (startTime > 0) {
+            state.currentPlaybackTime = startTime;
+            state.lastSavedPlaybackTime = startTime;
+        }
+
+        state.pendingSeekTime = startTime > 0 ? startTime : null;
+
+        let selectedAudioUrl = null;
+        let lastAudioError = null;
+        let usedFallbackAudio = false;
+
+        for (const candidateUrl of candidateAudioUrls) {
+            dom.audioPlayer.src = candidateUrl;
+            dom.audioPlayer.load();
+
+            try {
+                await waitForAudioReady(dom.audioPlayer);
+                selectedAudioUrl = candidateUrl;
+                usedFallbackAudio = candidateUrl !== primaryAudioUrl && candidateAudioUrls.length > 1;
+                break;
+            } catch (error) {
+                lastAudioError = error;
+                console.warn('音频元数据加载异常', error);
+
+                if (candidateUrl === primaryAudioUrl && candidateAudioUrls.length > 1) {
+                    debugLog('主音频地址加载失败，尝试使用备用地址');
+                }
+            }
+        }
+
+        if (!selectedAudioUrl) {
+            throw lastAudioError || new Error('音频加载失败');
+        }
+
+        if (usedFallbackAudio) {
+            debugLog(`已回退至备用音频地址: ${selectedAudioUrl}`);
+            showNotification('主音频加载失败，已切换到备用音源', 'warning');
+        }
+
+        state.currentAudioUrl = selectedAudioUrl;
+
+        if (state.pendingSeekTime != null) {
+            setAudioCurrentTime(state.pendingSeekTime);
+            state.pendingSeekTime = null;
+        } else {
+            setAudioCurrentTime(dom.audioPlayer.currentTime || 0);
+        }
+
+        state.lastSavedPlaybackTime = state.currentPlaybackTime;
+
+        let playPromise = null;
+
+        if (autoplay) {
+            playPromise = dom.audioPlayer.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error('播放失败:', error);
+                    handlePlaybackError(song, error);
+                });
+            } else {
+                playPromise = null;
+            }
+        } else {
+            dom.audioPlayer.pause();
+            updatePlayPauseButton();
+        }
+
+        scheduleDeferredSongAssets(song, playPromise);
+
+        debugLog(`开始播放: ${song.name} @${currentQuality}`);
+        
+        // 显示当前使用的音质
+        const qualityInfo = QUALITY_LEVELS.find(q => q.value === currentQuality);
+        if (qualityInfo && !isRetry) {
+            showNotification(`正在播放: ${song.name} (${qualityInfo.label})`);
+        }
+
+        if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
+            window.__SOLARA_UPDATE_MEDIA_METADATA();
+        }
+    } catch (error) {
+        console.error('播放歌曲失败:', error);
+        handlePlaybackError(song, error);
+    } finally {
+        savePlayerState();
+    }
+}
+
+// 添加播放错误处理函数
+function handlePlaybackError(song, error) {
+    stopPlaybackMonitoring();
+    
+    state.qualityRetryCount++;
+    debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}`);
+
+    // 如果超过最大重试次数，切换到下一首
+    if (state.qualityRetryCount >= state.maxQualityRetries) {
+        debugLog(`达到最大重试次数，切换到下一首歌曲`);
+        showNotification(`无法播放 ${song.name}，自动切换下一首`, 'warning');
+        resetQualityState();
+        playNext();
+        return;
+    }
+
+    // 尝试下一个较低音质
+    const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
+    if (nextQuality) {
+        state.currentQualityAttempt = nextQuality;
+        const qualityInfo = QUALITY_LEVELS.find(q => q.value === nextQuality);
+        debugLog(`自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
+        showNotification(`音质切换: ${qualityInfo?.label || nextQuality}`, 'info');
+        
+        // 使用新音质重新播放
+        setTimeout(() => {
+            playSong(song, {
+                autoplay: true,
+                startTime: state.currentPlaybackTime,
+                preserveProgress: true,
+                isRetry: true
+            });
+        }, 500);
+    } else {
+        // 没有更低的音质可用，切换到下一首
+        debugLog(`无更低音质可用，切换到下一首歌曲`);
+        showNotification(`所有音质均无法播放 ${song.name}，自动切换下一首`, 'error');
+        resetQualityState();
+        playNext();
+    }
+}
 
 function normalizeQuality(value) {
-    const match = QUALITY_OPTIONS.find(option => option.value === value);
+    const match = QUALITY_LEVELS.find(option => option.value === value);
     return match ? match.value : "320";
 }
 
@@ -849,6 +1062,16 @@ const state = {
     isMobileInlineLyricsOpen: false,
     selectedSearchResults: new Set(),
     radarOffset: savedRadarOffset, // 新增：雷达探索偏移量
+    playbackQuality: savedPlaybackQuality,
+    currentQualityAttempt: savedPlaybackQuality, // 当前尝试的音质
+    qualityRetryCount: 0, // 音质重试次数
+    maxQualityRetries: 3, // 最大重试次数
+    isAutoQualitySwitching: false, // 是否正在自动切换音质
+    playbackStuckTimer: null, // 播放卡住检测定时器
+    lastPlaybackTime: 0, // 上次播放时间
+    playbackStuckCount: 0, // 播放卡住计数
+    maxStuckRetries: 2, // 最大卡住重试次数
+    isPlaybackStuck: false, // 是否播放卡住
 };
 
 // ==== Media Session integration (Safari/iOS Lock Screen) ====
@@ -1100,6 +1323,81 @@ const state = {
 
     triggerMediaSessionMetadataRefresh();
 })();
+
+// 认证状态检查
+// 认证状态检查 - 修复版本
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/auth-status', {
+            credentials: 'include'  // 重要：包含 cookies
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.authenticated) {
+            console.log('用户未认证，跳转到登录页面');
+            window.location.href = '/login.html';
+            return false;
+        }
+        
+        console.log('用户已认证，继续加载应用');
+        return true;
+    } catch (error) {
+        console.error('认证检查失败:', error);
+        window.location.href = '/login.html';
+        return false;
+    }
+}
+
+// 退出登录功能
+function setupLogout() {
+    // 添加一个退出按钮到界面，或者使用键盘快捷键
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Shift+L 退出登录
+        if (e.ctrlKey && e.shiftKey && e.key === 'L') {
+            if (confirm('确定要退出登录吗？')) {
+                fetch('/api/logout', { 
+                    method: 'POST',
+                    credentials: 'include'
+                }).then(() => {
+                    window.location.href = '/login.html';
+                });
+            }
+        }
+    });
+}
+
+// 在应用初始化前检查认证
+async function initializeApp() {
+    console.log('开始应用初始化，检查认证状态...');
+    
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) {
+        console.log('认证失败，停止初始化');
+        return;
+    }
+    
+    console.log('认证成功，设置退出功能和交互');
+    setupLogout();
+    
+    // 原有的初始化代码
+    if (typeof setupInteractions === 'function') {
+        setupInteractions();
+    } else {
+        console.error('setupInteractions 函数未找到');
+    }
+}
+
+// 替换原有的立即执行代码，改为调用initializeApp
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+    initializeApp();
+}
 
 let sourceMenuPositionFrame = null;
 let qualityMenuPositionFrame = null;
@@ -2022,14 +2320,121 @@ function selectSearchSource(source) {
     closeSourceMenu();
 }
 
+// 添加播放状态监控函数
+function startPlaybackMonitoring() {
+    // 清除现有的监控
+    stopPlaybackMonitoring();
+    
+    state.lastPlaybackTime = dom.audioPlayer.currentTime || 0;
+    state.playbackStuckCount = 0;
+    state.isPlaybackStuck = false;
+    
+    // 每2秒检查一次播放状态
+    state.playbackStuckTimer = setInterval(() => {
+        checkPlaybackProgress();
+    }, 2000);
+    
+    debugLog("开始播放状态监控");
+}
+
+function stopPlaybackMonitoring() {
+    if (state.playbackStuckTimer) {
+        clearInterval(state.playbackStuckTimer);
+        state.playbackStuckTimer = null;
+    }
+    state.isPlaybackStuck = false;
+    debugLog("停止播放状态监控");
+}
+
+function checkPlaybackProgress() {
+    if (!dom.audioPlayer.src || dom.audioPlayer.paused || dom.audioPlayer.ended) {
+        return;
+    }
+    
+    const currentTime = dom.audioPlayer.currentTime || 0;
+    const timeDiff = currentTime - state.lastPlaybackTime;
+    
+    // 如果2秒内播放进度几乎没有变化，认为卡住了
+    if (timeDiff < 0.1 && currentTime > 0) {
+        state.playbackStuckCount++;
+        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(2)}秒, 卡住计数=${state.playbackStuckCount}`);
+        
+        if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
+            handlePlaybackStuck();
+        }
+    } else {
+        // 播放正常，重置计数
+        if (state.playbackStuckCount > 0) {
+            debugLog("播放恢复正常");
+            state.playbackStuckCount = 0;
+            state.isPlaybackStuck = false;
+        }
+    }
+    
+    state.lastPlaybackTime = currentTime;
+}
+
+function handlePlaybackStuck() {
+    if (!state.currentSong || state.isPlaybackStuck) {
+        return;
+    }
+    
+    state.isPlaybackStuck = true;
+    debugLog(`播放卡住处理: 当前音质=${state.currentQualityAttempt}, 卡住计数=${state.playbackStuckCount}`);
+    
+    // 尝试切换到更低音质
+    const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
+    if (nextQuality) {
+        state.currentQualityAttempt = nextQuality;
+        const qualityInfo = QUALITY_LEVELS.find(q => q.value === nextQuality);
+        debugLog(`播放卡住，自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
+        showNotification(`播放卡住，切换为 ${qualityInfo?.label || nextQuality}`, 'warning');
+        
+        // 使用新音质重新播放
+        setTimeout(() => {
+            replayCurrentSongWithNewQuality();
+        }, 500);
+    } else {
+        // 没有更低的音质可用，切换到下一首
+        debugLog(`所有音质均卡住，切换到下一首歌曲`);
+        showNotification(`播放卡住，自动切换下一首`, 'error');
+        stopPlaybackMonitoring();
+        resetQualityState();
+        playNext();
+    }
+}
+
+function replayCurrentSongWithNewQuality() {
+    if (!state.currentSong) return;
+    
+    const wasPlaying = !dom.audioPlayer.paused;
+    const targetTime = dom.audioPlayer.currentTime || state.currentPlaybackTime || 0;
+    
+    stopPlaybackMonitoring();
+    
+    try {
+        playSong(state.currentSong, {
+            autoplay: wasPlaying,
+            startTime: targetTime,
+            preserveProgress: true,
+            isRetry: true
+        });
+    } catch (error) {
+        console.error("重新播放失败:", error);
+        handlePlaybackError(state.currentSong, error);
+    }
+}
+
 function buildQualityMenu() {
     if (!dom.playerQualityMenu) return;
-    const optionsHtml = QUALITY_OPTIONS.map(option => {
-        const isActive = option.value === state.playbackQuality;
+    const currentQuality = state.playbackQuality;
+    const optionsHtml = QUALITY_LEVELS.map(option => {
+        const isActive = option.value === currentQuality;
         return `
             <div class="player-quality-option${isActive ? " active" : ""}" data-quality="${option.value}">
                 <span>${option.label}</span>
                 <small>${option.description}</small>
+                ${isActive ? '<i class="fas fa-check" aria-hidden="true"></i>' : ""}
             </div>
         `;
     }).join("");
@@ -2075,9 +2480,12 @@ function getQualityMenuAnchor() {
     return fallback;
 }
 
+// 修改 updateQualityLabel 函数，显示当前尝试的音质
 function updateQualityLabel() {
-    const option = QUALITY_OPTIONS.find(item => item.value === state.playbackQuality) || QUALITY_OPTIONS[0];
+    const currentQuality = state.currentQualityAttempt || state.playbackQuality;
+    const option = QUALITY_LEVELS.find(item => item.value === currentQuality) || QUALITY_LEVELS[2];
     if (!option) return;
+    
     dom.qualityLabel.textContent = option.label;
     dom.qualityToggle.title = `音质: ${option.label} (${option.description})`;
     if (dom.mobileQualityLabel) {
@@ -2273,16 +2681,21 @@ async function selectPlaybackQuality(quality) {
     }
 
     state.playbackQuality = normalized;
+    // 重置当前尝试音质
+    state.currentQualityAttempt = normalized;
+    state.qualityRetryCount = 0;
+    
     updateQualityLabel();
     buildQualityMenu();
     savePlayerState();
     closePlayerQualityMenu();
 
-    const option = QUALITY_OPTIONS.find(item => item.value === normalized);
+    const option = QUALITY_LEVELS.find(item => item.value === normalized);
     if (option) {
-        showNotification(`音质已切换为 ${option.label} (${option.description})`);
+        showNotification(`默认音质已设置为 ${option.label} (${option.description})`);
     }
 
+    // 如果当前有歌曲在播放，使用新音质重新加载
     if (state.currentSong) {
         const success = await reloadCurrentSong();
         if (!success) {
@@ -2290,11 +2703,14 @@ async function selectPlaybackQuality(quality) {
         }
     }
 }
-
 async function reloadCurrentSong() {
     if (!state.currentSong) return true;
     const wasPlaying = !dom.audioPlayer.paused;
     const targetTime = dom.audioPlayer.currentTime || state.currentPlaybackTime || 0;
+    
+    // 重置音质状态
+    resetQualityState();
+    
     try {
         await playSong(state.currentSong, {
             autoplay: wasPlaying,
@@ -2327,7 +2743,7 @@ async function restoreCurrentSongState() {
     }
 }
 
-window.addEventListener("load", setupInteractions);
+document.addEventListener('DOMContentLoaded', initializeApp);
 dom.audioPlayer.addEventListener("ended", autoPlayNext);
 
 function setupInteractions() {
@@ -2441,8 +2857,40 @@ function setupInteractions() {
 
     dom.audioPlayer.volume = state.volume;
     dom.volumeSlider.value = state.volume;
+     // 添加音频事件监听
+    dom.audioPlayer.addEventListener('error', (e) => {
+        console.error('音频播放错误:', e);
+        stopPlaybackMonitoring();
+        if (state.currentSong && !state.isAutoQualitySwitching) {
+            handlePlaybackError(state.currentSong, new Error('音频播放错误'));
+        }
+    });
+
+    dom.audioPlayer.addEventListener('loaderror', (e) => {
+        console.error('音频加载错误:', e);
+        stopPlaybackMonitoring();
+        if (state.currentSong && !state.isAutoQualitySwitching) {
+            handlePlaybackError(state.currentSong, new Error('音频加载错误'));
+        }
+    });
+    
+    dom.audioPlayer.addEventListener('pause', () => {
+        stopPlaybackMonitoring();
+    });
+    
+    dom.audioPlayer.addEventListener('ended', () => {
+        stopPlaybackMonitoring();
+    });
+    
+    dom.audioPlayer.addEventListener('seeked', () => {
+        // 跳转后重置播放状态监控
+        state.lastPlaybackTime = dom.audioPlayer.currentTime || 0;
+        state.playbackStuckCount = 0;
+    });
+
     updateVolumeSliderBackground(state.volume);
     updateVolumeIcon(state.volume);
+
 
     buildSourceMenu();
     updateSourceLabel();
@@ -4090,7 +4538,15 @@ function waitForAudioReady(player) {
 }
 
 async function playSong(song, options = {}) {
-    const { autoplay = true, startTime = 0, preserveProgress = false } = options;
+    const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
+
+    // 如果不是重试，重置音质状态
+    if (!isRetry) {
+        resetQualityState();
+    }
+
+    // 停止之前的监控
+    stopPlaybackMonitoring();
 
     window.clearTimeout(pendingPaletteTimer);
     state.audioReadyForPalette = false;
@@ -4102,9 +4558,9 @@ async function playSong(song, options = {}) {
     try {
         updateCurrentSongInfo(song, { loadArtwork: false });
 
-        const quality = state.playbackQuality || '320';
-        const audioUrl = API.getSongUrl(song, quality);
-        debugLog(`获取音频URL: ${audioUrl}`);
+        const currentQuality = state.currentQualityAttempt;
+        const audioUrl = API.getSongUrl(song, currentQuality);
+        debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 重试次数: ${state.qualityRetryCount}`);
 
         const audioData = await API.fetchJson(audioUrl);
 
@@ -4184,19 +4640,23 @@ async function playSong(song, options = {}) {
             setAudioCurrentTime(dom.audioPlayer.currentTime || 0);
         }
 
-        state.lastSavedPlaybackTime = state.currentPlaybackTime;
+        state.lastPlaybackTime = state.currentPlaybackTime;
 
         let playPromise = null;
 
         if (autoplay) {
             playPromise = dom.audioPlayer.play();
             if (playPromise !== undefined) {
-                playPromise.catch(error => {
+                playPromise.then(() => {
+                    // 播放成功，开始监控播放状态
+                    startPlaybackMonitoring();
+                }).catch(error => {
                     console.error('播放失败:', error);
-                    showNotification('播放失败，请检查网络连接', 'error');
+                    handlePlaybackError(song, error);
                 });
             } else {
                 playPromise = null;
+                startPlaybackMonitoring();
             }
         } else {
             dom.audioPlayer.pause();
@@ -4205,14 +4665,20 @@ async function playSong(song, options = {}) {
 
         scheduleDeferredSongAssets(song, playPromise);
 
-        debugLog(`开始播放: ${song.name} @${quality}`);
+        debugLog(`开始播放: ${song.name} @${currentQuality}`);
+        
+        // 显示当前使用的音质
+        const qualityInfo = QUALITY_LEVELS.find(q => q.value === currentQuality);
+        if (qualityInfo && !isRetry) {
+            showNotification(`正在播放: ${song.name} (${qualityInfo.label})`);
+        }
 
         if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
             window.__SOLARA_UPDATE_MEDIA_METADATA();
         }
     } catch (error) {
         console.error('播放歌曲失败:', error);
-        throw error;
+        handlePlaybackError(song, error);
     } finally {
         savePlayerState();
     }
@@ -4373,11 +4839,12 @@ function playNext() {
 
     if (playlist.length === 0) return;
 
+    // 重置音质状态
+    resetQualityState();
+
     if (state.playMode === "random") {
-        // 随机播放
         nextIndex = Math.floor(Math.random() * playlist.length);
     } else {
-        // 列表循环
         nextIndex = (state.currentTrackIndex + 1) % playlist.length;
     }
 
@@ -4407,11 +4874,12 @@ function playPrevious() {
 
     if (playlist.length === 0) return;
 
+    // 重置音质状态
+    resetQualityState();
+
     if (state.playMode === "random") {
-        // 随机播放
         prevIndex = Math.floor(Math.random() * playlist.length);
     } else {
-        // 列表循环
         prevIndex = state.currentTrackIndex - 1;
         if (prevIndex < 0) prevIndex = playlist.length - 1;
     }
@@ -4426,6 +4894,7 @@ function playPrevious() {
         playSearchResult(prevIndex);
     }
 }
+
 
 // 修复：在线音乐播放函数
 async function playOnlineSong(index) {
@@ -5097,3 +5566,37 @@ window.setRadarOffset = function(offset) {
     showNotification(`雷达偏移量已设置为 ${newOffset}`, "success");
     debugLog(`雷达偏移量已设置为 ${newOffset}`);
 };
+// ==== 调试函数 ====
+// 添加调试函数 - 放在文件末尾，事件监听器之前
+// 更新调试函数，添加播放状态信息
+window.getQualityState = function() {
+    return {
+        playbackQuality: state.playbackQuality,
+        currentQualityAttempt: state.currentQualityAttempt,
+        qualityRetryCount: state.qualityRetryCount,
+        isAutoQualitySwitching: state.isAutoQualitySwitching,
+        playbackStuckCount: state.playbackStuckCount,
+        isPlaybackStuck: state.isPlaybackStuck,
+        lastPlaybackTime: state.lastPlaybackTime,
+        currentPlaybackTime: dom.audioPlayer.currentTime || 0
+    };
+};
+
+window.forcePlaybackStuck = function() {
+    if (state.currentSong) {
+        debugLog("手动触发播放卡住检测");
+        handlePlaybackStuck();
+    }
+};
+
+window.forceQualityRetry = function() {
+    if (state.currentSong) {
+        debugLog("强制触发音质重试");
+        handlePlaybackError(state.currentSong, new Error('手动触发重试'));
+    }
+};
+
+// ==== 应用初始化 ====
+// 替换原有的立即执行代码，改为调用initializeApp
+document.addEventListener('DOMContentLoaded', initializeApp);
+dom.audioPlayer.addEventListener("ended", autoPlayNext);

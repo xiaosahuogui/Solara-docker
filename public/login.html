@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solara - 登录</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            backdrop-filter: blur(10px);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            color: #333;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .login-header p {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            position: relative;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #e1e5e9;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: #fff;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .login-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #fcc;
+            text-align: center;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .success-message {
+            background: #efe;
+            color: #363;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #cfc;
+            text-align: center;
+            display: none;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .loading {
+            display: none;
+        }
+
+        .loading.show {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .server-info {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .server-info pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .debug-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>Solara</h1>
+            <p>音乐播放器 - 请输入访问密码</p>
+        </div>
+        
+        <form class="login-form" id="loginForm">
+            <div class="form-group">
+                <input 
+                    type="password" 
+                    id="password" 
+                    placeholder="输入访问密码" 
+                    required
+                    autocomplete="current-password"
+                    autofocus
+                >
+            </div>
+            
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+            
+            <button type="submit" class="login-btn" id="loginBtn">
+                <span id="btnText">登录</span>
+                <i class="fas fa-spinner loading" id="loadingSpinner"></i>
+            </button>
+        </form>
+        
+        <div class="footer">
+            <p>仅供授权用户访问</p>
+            <div class="server-info" id="serverInfo" style="display: none;">
+                <strong>服务器信息:</strong>
+                <pre id="serverInfoContent"></pre>
+            </div>
+            <div class="debug-info" id="debugInfo" style="display: none;">
+                <strong>调试信息:</strong>
+                <pre id="debugInfoContent"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 工具函数：格式化时间为中国时间
+        function formatChinaTime(isoString) {
+            if (!isoString) return '未知时间';
+            try {
+                const date = new Date(isoString);
+                return date.toLocaleString('zh-CN', { 
+                    timeZone: 'Asia/Shanghai',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+            } catch (e) {
+                return isoString;
+            }
+        }
+
+        // 检查是否已经登录
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth-status', {
+                    credentials: 'include',
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.authenticated) {
+                        console.log('用户已认证，跳转到主页面');
+                        showSuccess('登录状态有效，正在跳转...');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1000);
+                        return true;
+                    }
+                }
+                return false;
+            } catch (error) {
+                console.error('检查认证状态失败:', error);
+                return false;
+            }
+        }
+
+        // 获取服务器信息
+        async function getServerInfo() {
+            try {
+                const response = await fetch('/api/health', {
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const localTime = formatChinaTime(data.timestamp);
+                    document.getElementById('serverInfoContent').textContent = 
+                        `状态: ${data.status}\n消息: ${data.message}\n服务器时间: ${localTime}\n版本: ${data.version}`;
+                    document.getElementById('serverInfo').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('获取服务器信息失败:', error);
+            }
+        }
+
+        // 显示错误消息
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            const successElement = document.getElementById('successMessage');
+            errorElement.textContent = message;
+            errorElement.classList.add('show');
+            successElement.classList.remove('show');
+        }
+
+        // 显示成功消息
+        function showSuccess(message) {
+            const errorElement = document.getElementById('errorMessage');
+            const successElement = document.getElementById('successMessage');
+            successElement.textContent = message;
+            successElement.classList.add('show');
+            errorElement.classList.remove('show');
+        }
+
+        // 更新调试信息
+        function updateDebugInfo(info) {
+            const debugElement = document.getElementById('debugInfo');
+            const debugContent = document.getElementById('debugInfoContent');
+            debugContent.textContent = info;
+            debugElement.style.display = 'block';
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const btnText = document.getElementById('btnText');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            
+            // 显示加载状态
+            loginBtn.disabled = true;
+            btnText.textContent = '登录中...';
+            loadingSpinner.classList.add('show');
+            showError('');
+            showSuccess('');
+
+            let debugInfo = `开始登录流程...\n`;
+            
+            try {
+                debugInfo += `发送登录请求...\n`;
+                updateDebugInfo(debugInfo);
+
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include', // 重要：包含 cookies
+                    body: JSON.stringify({ password })
+                });
+
+                debugInfo += `响应状态: ${response.status}\n`;
+                updateDebugInfo(debugInfo);
+
+                const data = await response.json();
+                debugInfo += `响应数据: ${JSON.stringify(data)}\n`;
+                updateDebugInfo(debugInfo);
+                
+                if (data.success) {
+                    debugInfo += `登录成功，等待跳转...\n`;
+                    updateDebugInfo(debugInfo);
+                    
+                    showSuccess('登录成功！正在跳转...');
+                    
+                    // 等待一下让用户看到成功消息
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                } else {
+                    // 登录失败
+                    showError(data.error || '登录失败');
+                    debugInfo += `登录失败: ${data.error}\n`;
+                    updateDebugInfo(debugInfo);
+                    
+                    // 清空密码框
+                    document.getElementById('password').value = '';
+                    document.getElementById('password').focus();
+                    
+                    // 恢复按钮状态
+                    loginBtn.disabled = false;
+                    btnText.textContent = '登录';
+                    loadingSpinner.classList.remove('show');
+                }
+            } catch (error) {
+                debugInfo += `请求失败: ${error.message}\n`;
+                updateDebugInfo(debugInfo);
+                
+                showError('网络错误，请重试');
+                console.error('登录请求失败:', error);
+                
+                // 恢复按钮状态
+                loginBtn.disabled = false;
+                btnText.textContent = '登录';
+                loadingSpinner.classList.remove('show');
+            }
+        });
+
+        // 页面加载时执行
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('登录页面加载完成');
+            
+            // 先获取服务器信息
+            await getServerInfo();
+            
+            // 然后检查认证状态
+            const isAuthenticated = await checkAuthStatus();
+            if (!isAuthenticated) {
+                // 自动聚焦密码输入框
+                document.getElementById('password').focus();
+                
+                // 显示调试信息
+                updateDebugInfo('页面加载完成\n等待用户输入密码...');
+            }
+        });
+
+        // 添加回车键提交支持
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+            }
+        });
+    </script>
+</body>
+</html>

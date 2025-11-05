@@ -16,6 +16,34 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="css/style.css">
+
+    <script>
+    // 防止闪屏：立即检查认证状态
+    (function() {
+        // 立即隐藏页面内容，直到认证检查完成
+        document.documentElement.style.visibility = 'hidden';
+        
+        fetch('/api/auth-status', {
+            credentials: 'include',
+            headers: { 'Cache-Control': 'no-cache' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.authenticated) {
+                console.log('未认证用户，重定向到登录页');
+                window.location.href = '/login.html';
+            } else {
+                console.log('已认证用户，显示页面');
+                document.documentElement.style.visibility = 'visible';
+            }
+        })
+        .catch(error => {
+            console.error('认证检查失败:', error);
+            window.location.href = '/login.html';
+        });
+    })();
+    </script>
+    
     <script>
         (function () {
             const ua = navigator.userAgent || "";
