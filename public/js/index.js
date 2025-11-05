@@ -579,7 +579,9 @@ function resetQualityState() {
     state.isAutoQualitySwitching = false;
     state.playbackStuckCount = 0;
     state.isPlaybackStuck = false;
+    state.isWaitingForPlayback = false;
     stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
     debugLog(`音质状态重置: 当前尝试音质=${state.currentQualityAttempt}, 重试次数=${state.qualityRetryCount}`);
 }
 
@@ -1072,6 +1074,10 @@ const state = {
     playbackStuckCount: 0, // 播放卡住计数
     maxStuckRetries: 2, // 最大卡住重试次数
     isPlaybackStuck: false, // 是否播放卡住
+    loadTimeoutTimer: null, // 加载超时定时器
+    loadStartTime: 0, // 开始加载的时间戳
+    maxLoadTime: 5000, // 最大加载时间（5秒）
+    isWaitingForPlayback: false, // 是否在等待播放开始
 };
 
 // ==== Media Session integration (Safari/iOS Lock Screen) ====
@@ -2320,6 +2326,95 @@ function selectSearchSource(source) {
     closeSourceMenu();
 }
 
+// 添加加载超时监控函数
+function startLoadTimeoutMonitoring() {
+    // 清除现有的超时监控
+    stopLoadTimeoutMonitoring();
+    
+    state.loadStartTime = Date.now();
+    state.isWaitingForPlayback = true;
+    
+    // 设置5秒超时检测
+    state.loadTimeoutTimer = setTimeout(() => {
+        checkLoadTimeout();
+    }, state.maxLoadTime);
+    
+    debugLog(`开始加载超时监控: 最大等待时间=${state.maxLoadTime}ms`);
+}
+
+function stopLoadTimeoutMonitoring() {
+    if (state.loadTimeoutTimer) {
+        clearTimeout(state.loadTimeoutTimer);
+        state.loadTimeoutTimer = null;
+    }
+    state.isWaitingForPlayback = false;
+    debugLog("停止加载超时监控");
+}
+
+function checkLoadTimeout() {
+    if (!state.currentSong || !state.isWaitingForPlayback) {
+        return;
+    }
+    
+    const currentTime = Date.now();
+    const loadTime = currentTime - state.loadStartTime;
+    
+    debugLog(`加载超时检查: 已等待 ${loadTime}ms, 播放状态=${!dom.audioPlayer.paused}, 当前时间=${dom.audioPlayer.currentTime}`);
+    
+    // 如果5秒后还没有开始播放或者播放时间几乎为0，认为加载超时
+    if (dom.audioPlayer.paused || (dom.audioPlayer.currentTime || 0) < 0.5) {
+        handleLoadTimeout();
+    } else {
+        debugLog("加载成功，播放已开始");
+    }
+}
+
+function handleLoadTimeout() {
+    if (!state.currentSong || !state.isWaitingForPlayback) {
+        return;
+    }
+    
+    debugLog(`加载超时处理: 当前音质=${state.currentQualityAttempt}, 等待时间=${Date.now() - state.loadStartTime}ms`);
+    
+    // 尝试切换到更低音质
+    const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
+    if (nextQuality) {
+        state.currentQualityAttempt = nextQuality;
+        const qualityInfo = QUALITY_LEVELS.find(q => q.value === nextQuality);
+        debugLog(`加载超时，自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
+        showNotification(`加载超时，切换为 ${qualityInfo?.label || nextQuality}`, 'warning');
+        
+        // 使用新音质重新播放
+        setTimeout(() => {
+            replayCurrentSongDueToLoadTimeout();
+        }, 500);
+    } else {
+        // 没有更低的音质可用，切换到下一首
+        debugLog(`所有音质均加载超时，切换到下一首歌曲`);
+        showNotification(`加载超时，自动切换下一首`, 'error');
+        stopLoadTimeoutMonitoring();
+        resetQualityState();
+        playNext();
+    }
+}
+
+function replayCurrentSongDueToLoadTimeout() {
+    if (!state.currentSong) return;
+    
+    stopLoadTimeoutMonitoring();
+    
+    try {
+        playSong(state.currentSong, {
+            autoplay: true,
+            startTime: 0, // 从头开始播放
+            preserveProgress: false,
+            isRetry: true
+        });
+    } catch (error) {
+        console.error("重新播放失败:", error);
+        handlePlaybackError(state.currentSong, error);
+    }
+}
 // 添加播放状态监控函数
 function startPlaybackMonitoring() {
     // 清除现有的监控
@@ -2861,6 +2956,7 @@ function setupInteractions() {
     dom.audioPlayer.addEventListener('error', (e) => {
         console.error('音频播放错误:', e);
         stopPlaybackMonitoring();
+        stopLoadTimeoutMonitoring();
         if (state.currentSong && !state.isAutoQualitySwitching) {
             handlePlaybackError(state.currentSong, new Error('音频播放错误'));
         }
@@ -2869,6 +2965,7 @@ function setupInteractions() {
     dom.audioPlayer.addEventListener('loaderror', (e) => {
         console.error('音频加载错误:', e);
         stopPlaybackMonitoring();
+        stopLoadTimeoutMonitoring();
         if (state.currentSong && !state.isAutoQualitySwitching) {
             handlePlaybackError(state.currentSong, new Error('音频加载错误'));
         }
@@ -2876,16 +2973,39 @@ function setupInteractions() {
     
     dom.audioPlayer.addEventListener('pause', () => {
         stopPlaybackMonitoring();
+        stopLoadTimeoutMonitoring();
     });
     
     dom.audioPlayer.addEventListener('ended', () => {
         stopPlaybackMonitoring();
+        stopLoadTimeoutMonitoring();
     });
     
     dom.audioPlayer.addEventListener('seeked', () => {
         // 跳转后重置播放状态监控
         state.lastPlaybackTime = dom.audioPlayer.currentTime || 0;
         state.playbackStuckCount = 0;
+    });
+
+    // 添加播放进度事件监听，用于检测播放开始
+    dom.audioPlayer.addEventListener('timeupdate', () => {
+        // 如果正在等待播放开始，并且有播放进度，停止加载超时监控
+        if (state.isWaitingForPlayback && dom.audioPlayer.currentTime > 0.5) {
+            debugLog("检测到播放开始，停止加载超时监控");
+            stopLoadTimeoutMonitoring();
+        }
+    });
+
+    // 添加加载进度事件监听
+    dom.audioPlayer.addEventListener('progress', () => {
+        // 如果有加载进度，但播放还没开始，可以考虑延长超时时间或提供反馈
+        if (state.isWaitingForPlayback) {
+            const buffered = dom.audioPlayer.buffered;
+            if (buffered.length > 0) {
+                const bufferedEnd = buffered.end(buffered.length - 1);
+                debugLog(`加载进度: 已缓冲 ${bufferedEnd.toFixed(2)} 秒`);
+            }
+        }
     });
 
     updateVolumeSliderBackground(state.volume);
@@ -4547,6 +4667,7 @@ async function playSong(song, options = {}) {
 
     // 停止之前的监控
     stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
 
     window.clearTimeout(pendingPaletteTimer);
     state.audioReadyForPalette = false;
@@ -4645,22 +4766,29 @@ async function playSong(song, options = {}) {
         let playPromise = null;
 
         if (autoplay) {
+            // 开始加载超时监控
+            startLoadTimeoutMonitoring();
+            
             playPromise = dom.audioPlayer.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
-                    // 播放成功，开始监控播放状态
+                    // 播放成功，停止加载超时监控，开始播放状态监控
+                    stopLoadTimeoutMonitoring();
                     startPlaybackMonitoring();
                 }).catch(error => {
                     console.error('播放失败:', error);
+                    stopLoadTimeoutMonitoring();
                     handlePlaybackError(song, error);
                 });
             } else {
                 playPromise = null;
+                // 如果play()没有返回Promise，我们仍然需要监控
                 startPlaybackMonitoring();
             }
         } else {
             dom.audioPlayer.pause();
             updatePlayPauseButton();
+            stopLoadTimeoutMonitoring();
         }
 
         scheduleDeferredSongAssets(song, playPromise);
@@ -4678,11 +4806,13 @@ async function playSong(song, options = {}) {
         }
     } catch (error) {
         console.error('播放歌曲失败:', error);
+        stopLoadTimeoutMonitoring();
         handlePlaybackError(song, error);
     } finally {
         savePlayerState();
     }
 }
+
 
 function scheduleDeferredSongAssets(song, playPromise) {
     const run = () => {
@@ -5578,21 +5708,30 @@ window.getQualityState = function() {
         playbackStuckCount: state.playbackStuckCount,
         isPlaybackStuck: state.isPlaybackStuck,
         lastPlaybackTime: state.lastPlaybackTime,
-        currentPlaybackTime: dom.audioPlayer.currentTime || 0
+        currentPlaybackTime: dom.audioPlayer.currentTime || 0,
+        isWaitingForPlayback: state.isWaitingForPlayback,
+        loadStartTime: state.loadStartTime,
+        loadTimeElapsed: state.isWaitingForPlayback ? Date.now() - state.loadStartTime : 0
     };
 };
 
-window.forcePlaybackStuck = function() {
-    if (state.currentSong) {
-        debugLog("手动触发播放卡住检测");
-        handlePlaybackStuck();
+window.forceLoadTimeout = function() {
+    if (state.currentSong && state.isWaitingForPlayback) {
+        debugLog("手动触发加载超时");
+        handleLoadTimeout();
+    } else {
+        debugLog("无法触发加载超时: 没有正在等待播放的歌曲");
     }
 };
 
-window.forceQualityRetry = function() {
-    if (state.currentSong) {
-        debugLog("强制触发音质重试");
-        handlePlaybackError(state.currentSong, new Error('手动触发重试'));
+// 添加配置选项到调试函数
+window.setLoadTimeout = function(timeoutMs) {
+    if (timeoutMs && timeoutMs > 0) {
+        state.maxLoadTime = timeoutMs;
+        debugLog(`设置加载超时时间为: ${timeoutMs}ms`);
+        return `加载超时时间已设置为 ${timeoutMs}ms`;
+    } else {
+        return `当前加载超时时间: ${state.maxLoadTime}ms`;
     }
 };
 
