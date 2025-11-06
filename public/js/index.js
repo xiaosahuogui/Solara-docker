@@ -2519,12 +2519,12 @@ function checkPlaybackProgress() {
     const currentTime = dom.audioPlayer.currentTime || 0;
     const timeDiff = currentTime - state.lastPlaybackTime;
     
-    // 如果2秒内播放进度几乎没有变化，认为卡住了
+    // 如果5秒内播放进度几乎没有变化，认为卡住了
     if (timeDiff < 0.1 && currentTime > 0) {
         state.playbackStuckCount++;
-        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
+        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(5)}秒, 卡住计数=${state.playbackStuckCount}`);
         
-        if (state.playbackStuckCount >= 1 && !state.isPlaybackStuck) {
+        if (state.playbackStuckCount >= 5 && !state.isPlaybackStuck) {
             handlePlaybackStuck();
         }
     } else {
