@@ -5,6 +5,9 @@ const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+// 在 server.js 中添加
+const FISH_MUSIC_API = process.env.FISH_MUSIC_API || "https://m-api.ceseet.me";
+const FISH_MUSIC_KEY = process.env.FISH_MUSIC_KEY || "";
 
 // 配置密码（在实际环境中应该使用环境变量）
 const AUTH_PASSWORD = process.env.SOLARA_PASSWORD || 'solara123';
