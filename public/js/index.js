@@ -66,13 +66,15 @@ const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
 const MAX_RADAR_OFFSET = 200; // 最大雷达偏移量，对应2页结果（2×100=200条）
 const MAX_SEARCH_PAGES = 2; // 最大搜索页数
 
-// 在文件开头的常量定义部分添加音质等级配置
+// 更新音质等级配置以匹配 fish-music
 const QUALITY_LEVELS = [
-    { value: "999", label: "无损音质", description: "FLAC", level: 4 },
+    { value: "flac24bit", label: "24bit无损", description: "FLAC 24bit", level: 5 },
+    { value: "flac", label: "无损音质", description: "FLAC", level: 4 },
     { value: "320", label: "极高音质", description: "320 kbps", level: 3 },
-    { value: "192", label: "高品音质", description: "192 kbps", level: 2 },
+    // 移除 192k 选项，因为 fish-music 不支持
     { value: "128", label: "标准音质", description: "128 kbps", level: 1 }
 ];
+
 
 // 在文件开头的常量定义部分添加屏蔽关键词配置
 const BLOCKED_KEYWORDS = [
@@ -84,7 +86,7 @@ const BLOCKED_KEYWORDS = [
     "伴奏", "纯音乐", "Instrumental", "instrumental",
     "Demo", "demo", "DEMO", "试听", "原唱", "翻奏",
     "自制", "铃声", "手机铃声", "网友自制",
-    "教学", "教程", "练习",
+    "教学", "教程", "练习", "车载", "电音",
     "片段", "剪辑", "剪切",
     "非原唱", "不是原唱",
     "伴奏版", "纯音乐版"
@@ -511,7 +513,7 @@ function buildAudioProxyUrl(url) {
 const SOURCE_OPTIONS = [
     { value: "netease", label: "网易云音乐" },
     { value: "kuwo", label: "酷我音乐" },
-    { value: "joox", label: "JOOX音乐" }
+    { value: "qq", label: "QQ音乐" },
 ];
 
 // 备选关键词列表
@@ -521,8 +523,7 @@ const RADAR_KEYWORDS = [
     "轻音乐", "流行摇滚", "独立音乐", "民谣摇滚", "电子舞曲",
     "轻爵士", "Funk", "Soul Music", "新世纪音乐", "电影原声", "动漫音乐",
     "乡村", "雷鬼", "世界音乐", "舞曲", "Bossa Nova", "流行R&B",
-    "嘻哈", "拉丁", "古典流行", "氛围音乐", "钢琴流行", "爵士摇滚",
-    "灵魂R&B", "电子流行", "独立流行", "另类摇滚", "后摇滚",
+    "Rap", "拉丁", "爵士摇滚", "后摇滚",
 
     // 国内热门歌手
     "周杰伦", "邓紫棋", "李健", "毛不易", "薛之谦", "张韶涵", "王心凌",
@@ -562,6 +563,7 @@ function getCurrentQualityLevel() {
     const currentQuality = state.currentQualityAttempt || state.playbackQuality;
     return QUALITY_LEVELS.find(q => q.value === currentQuality) || QUALITY_LEVELS[2]; // 默认返回极高音质
 }
+
 
 function getNextLowerQuality(currentQuality) {
     const currentLevel = QUALITY_LEVELS.find(q => q.value === currentQuality)?.level || 3;
@@ -867,9 +869,10 @@ const savedCurrentPlaylist = (() => {
     return playlists.includes(stored) ? stored : "playlist";
 })();
 
-// API配置 - 修复API地址和请求方式
+// API配置 - 使用 fish-music 音源
 const API = {
     baseUrl: "/proxy",
+    apiKey: "", // 如果需要 API_KEY，在这里配置
 
     generateSignature: () => {
         return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -900,9 +903,9 @@ const API = {
         }
     },
 
+    // 搜索接口 - 保持原有格式
     search: async (keyword, source = "kuwo", count = SEARCH_PAGE_SIZE, page = 1) => {
         const signature = API.generateSignature();
-        // 修改：使用动态页面大小
         const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
 
         try {
@@ -928,57 +931,38 @@ const API = {
         }
     },
 
-    
-
-    
-    search: async (keyword, source = "kuwo", count = 50, page = 1) => {
+    // 获取歌曲URL - 适配 fish-music 格式
+    getSongUrl: (song, quality = "320") => {
         const signature = API.generateSignature();
-        const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
-
-        try {
-            debugLog(`API请求: ${url}`);
-            const data = await API.fetchJson(url);
-            debugLog(`API响应: ${JSON.stringify(data).substring(0, 200)}...`);
-
-            if (!Array.isArray(data)) throw new Error("搜索结果格式错误");
-
-            return data.map(song => ({
-                id: song.id,
-                name: song.name,
-                artist: song.artist,
-                album: song.album,
-                pic_id: song.pic_id,
-                url_id: song.url_id,
-                lyric_id: song.lyric_id,
-                source: song.source,
-            }));
-        } catch (error) {
-            debugLog(`API错误: ${error.message}`);
-            throw error;
-        }
+        // 映射音质到 fish-music 格式
+        const qualityMap = {
+            "128": "128k",
+            "192": "192k", 
+            "320": "320k",
+            "999": "flac"
+        };
+        const fishQuality = qualityMap[quality] || "320k";
+        
+        return `${API.baseUrl}?types=url&id=${song.id}&source=${song.source || "netease"}&quality=${fishQuality}&s=${signature}`;
     },
 
-    getRadarPlaylist: async (playlistId = "3778678", options = {}) => {
+    // 获取歌词 - 适配 fish-music 格式
+    getLyric: (song) => {
         const signature = API.generateSignature();
+        return `${API.baseUrl}?types=lyric&id=${song.lyric_id || song.id}&source=${song.source || "netease"}&s=${signature}`;
+    },
 
-        let limit = 50;
-        let offset = 0;
+    // 获取封面 - 适配 fish-music 格式
+    getPicUrl: (song) => {
+        const signature = API.generateSignature();
+        return `${API.baseUrl}?types=pic&id=${song.pic_id}&source=${song.source || "netease"}&s=${signature}`;
+    },
 
-        if (typeof options === "number") {
-            limit = options;
-        } else if (options && typeof options === "object") {
-            if (Number.isFinite(options.limit)) {
-                limit = options.limit;
-            } else if (Number.isFinite(options.count)) {
-                limit = options.count;
-            }
-            if (Number.isFinite(options.offset)) {
-                offset = options.offset;
-            }
-        }
-
-        limit = Math.max(1, Math.min(200, Math.trunc(limit)) || 50);
-        offset = Math.max(0, Math.trunc(offset) || 0);
+    // 获取播放列表 - 可选功能
+    getPlaylist: async (playlistId = "3778678", options = {}) => {
+        const signature = API.generateSignature();
+        const limit = options.limit || 50;
+        const offset = options.offset || 0;
 
         const params = new URLSearchParams({
             types: "playlist",
@@ -1009,21 +993,6 @@ const API = {
             console.error("API request failed:", error);
             throw error;
         }
-    },
-
-    getSongUrl: (song, quality = "320") => {
-        const signature = API.generateSignature();
-        return `${API.baseUrl}?types=url&id=${song.id}&source=${song.source || "netease"}&br=${quality}&s=${signature}`;
-    },
-
-    getLyric: (song) => {
-        const signature = API.generateSignature();
-        return `${API.baseUrl}?types=lyric&id=${song.lyric_id || song.id}&source=${song.source || "netease"}&s=${signature}`;
-    },
-
-    getPicUrl: (song) => {
-        const signature = API.generateSignature();
-        return `${API.baseUrl}?types=pic&id=${song.pic_id}&source=${song.source || "netease"}&size=300&s=${signature}`;
     }
 };
 
@@ -2519,12 +2488,12 @@ function checkPlaybackProgress() {
     const currentTime = dom.audioPlayer.currentTime || 0;
     const timeDiff = currentTime - state.lastPlaybackTime;
     
-    // 如果5秒内播放进度几乎没有变化，认为卡住了
+    // 如果2秒内播放进度几乎没有变化，认为卡住了
     if (timeDiff < 0.1 && currentTime > 0) {
         state.playbackStuckCount++;
-        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(5)}秒, 卡住计数=${state.playbackStuckCount}`);
+        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
         
-        if (state.playbackStuckCount >= 5 && !state.isPlaybackStuck) {
+        if (state.playbackStuckCount >= 1 && !state.isPlaybackStuck) {
             handlePlaybackStuck();
         }
     } else {
