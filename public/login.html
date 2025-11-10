@@ -153,27 +153,41 @@
             font-size: 0.9rem;
         }
 
-        .server-info {
-            background: #f5f5f5;
-            border-radius: 8px;
-            padding: 10px;
+        .server-status {
             margin-top: 15px;
+            padding: 8px 12px;
+            border-radius: 6px;
             font-size: 0.8rem;
-            color: #666;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
-        .server-info pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
+        .server-status.ok {
+            background: #e8f5e8;
+            color: #2d5a2d;
+            border: 1px solid #c8e6c9;
         }
 
-        .debug-info {
-            margin-top: 15px;
-            padding: 10px;
-            background: #f0f0f0;
-            border-radius: 5px;
-            font-size: 0.7rem;
-            color: #666;
+        .server-status.error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.ok {
+            background: #4caf50;
+        }
+
+        .status-dot.error {
+            background: #f44336;
         }
     </style>
 </head>
@@ -207,38 +221,14 @@
         
         <div class="footer">
             <p>仅供授权用户访问</p>
-            <div class="server-info" id="serverInfo" style="display: none;">
-                <strong>服务器信息:</strong>
-                <pre id="serverInfoContent"></pre>
-            </div>
-            <div class="debug-info" id="debugInfo" style="display: none;">
-                <strong>调试信息:</strong>
-                <pre id="debugInfoContent"></pre>
+            <div id="serverStatus" class="server-status" style="display: none;">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">检查服务器状态...</span>
             </div>
         </div>
     </div>
 
     <script>
-        // 工具函数：格式化时间为中国时间
-        function formatChinaTime(isoString) {
-            if (!isoString) return '未知时间';
-            try {
-                const date = new Date(isoString);
-                return date.toLocaleString('zh-CN', { 
-                    timeZone: 'Asia/Shanghai',
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false
-                });
-            } catch (e) {
-                return isoString;
-            }
-        }
-
         // 检查是否已经登录
         async function checkAuthStatus() {
             try {
@@ -252,7 +242,6 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data.authenticated) {
-                        console.log('用户已认证，跳转到主页面');
                         showSuccess('登录状态有效，正在跳转...');
                         setTimeout(() => {
                             window.location.href = '/';
@@ -267,23 +256,38 @@
             }
         }
 
-        // 获取服务器信息
-        async function getServerInfo() {
+        // 获取服务器状态
+        async function getServerStatus() {
             try {
                 const response = await fetch('/api/health', {
                     headers: {
                         'Cache-Control': 'no-cache'
                     }
                 });
+                
+                const statusElement = document.getElementById('serverStatus');
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                
                 if (response.ok) {
                     const data = await response.json();
-                    const localTime = formatChinaTime(data.timestamp);
-                    document.getElementById('serverInfoContent').textContent = 
-                        `状态: ${data.status}\n消息: ${data.message}\n服务器时间: ${localTime}\n版本: ${data.version}`;
-                    document.getElementById('serverInfo').style.display = 'block';
+                    statusElement.className = 'server-status ok';
+                    statusDot.className = 'status-dot ok';
+                    statusText.textContent = '服务器状态正常';
+                    statusElement.style.display = 'inline-flex';
+                } else {
+                    throw new Error('服务器响应异常');
                 }
             } catch (error) {
-                console.error('获取服务器信息失败:', error);
+                const statusElement = document.getElementById('serverStatus');
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                
+                statusElement.className = 'server-status error';
+                statusDot.className = 'status-dot error';
+                statusText.textContent = '服务器连接失败';
+                statusElement.style.display = 'inline-flex';
+                console.error('获取服务器状态失败:', error);
             }
         }
 
@@ -305,14 +309,6 @@
             errorElement.classList.remove('show');
         }
 
-        // 更新调试信息
-        function updateDebugInfo(info) {
-            const debugElement = document.getElementById('debugInfo');
-            const debugContent = document.getElementById('debugInfoContent');
-            debugContent.textContent = info;
-            debugElement.style.display = 'block';
-        }
-
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -328,32 +324,19 @@
             showError('');
             showSuccess('');
 
-            let debugInfo = `开始登录流程...\n`;
-            
             try {
-                debugInfo += `发送登录请求...\n`;
-                updateDebugInfo(debugInfo);
-
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    credentials: 'include', // 重要：包含 cookies
+                    credentials: 'include',
                     body: JSON.stringify({ password })
                 });
 
-                debugInfo += `响应状态: ${response.status}\n`;
-                updateDebugInfo(debugInfo);
-
                 const data = await response.json();
-                debugInfo += `响应数据: ${JSON.stringify(data)}\n`;
-                updateDebugInfo(debugInfo);
                 
                 if (data.success) {
-                    debugInfo += `登录成功，等待跳转...\n`;
-                    updateDebugInfo(debugInfo);
-                    
                     showSuccess('登录成功！正在跳转...');
                     
                     // 等待一下让用户看到成功消息
@@ -363,8 +346,6 @@
                 } else {
                     // 登录失败
                     showError(data.error || '登录失败');
-                    debugInfo += `登录失败: ${data.error}\n`;
-                    updateDebugInfo(debugInfo);
                     
                     // 清空密码框
                     document.getElementById('password').value = '';
@@ -376,9 +357,6 @@
                     loadingSpinner.classList.remove('show');
                 }
             } catch (error) {
-                debugInfo += `请求失败: ${error.message}\n`;
-                updateDebugInfo(debugInfo);
-                
                 showError('网络错误，请重试');
                 console.error('登录请求失败:', error);
                 
@@ -393,17 +371,14 @@
         document.addEventListener('DOMContentLoaded', async () => {
             console.log('登录页面加载完成');
             
-            // 先获取服务器信息
-            await getServerInfo();
+            // 先获取服务器状态
+            await getServerStatus();
             
             // 然后检查认证状态
             const isAuthenticated = await checkAuthStatus();
             if (!isAuthenticated) {
                 // 自动聚焦密码输入框
                 document.getElementById('password').focus();
-                
-                // 显示调试信息
-                updateDebugInfo('页面加载完成\n等待用户输入密码...');
             }
         });
 
