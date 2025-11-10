@@ -656,9 +656,33 @@ async function playSong(song, options = {}) {
             dom.audioPlayer.load();
 
             try {
-                await waitForAudioReady(dom.audioPlayer);
+                await waitForAudioReadyWithFallback(dom.audioPlayer, song);
                 selectedAudioUrl = candidateUrl;
                 usedFallbackAudio = candidateUrl !== primaryAudioUrl && candidateAudioUrls.length > 1;
+                
+                // 检查并设置时长信息
+                const finalDuration = dom.audioPlayer.duration;
+                if (Number.isFinite(finalDuration) && finalDuration > 0) {
+                    debugLog(`最终音频时长: ${finalDuration}s`);
+                    dom.progressBar.max = finalDuration;
+                    dom.durationDisplay.textContent = formatTime(finalDuration);
+                } else {
+                    debugLog(`音频时长不可用, 使用备选时长设置`);
+                    // 备选方案：使用API返回的时长或默认值
+                    let estimatedDuration = 180; // 默认3分钟
+                    if (audioData.duration) {
+                        estimatedDuration = audioData.duration / 1000;
+                        debugLog(`使用API返回的时长: ${estimatedDuration}s`);
+                    } else if (song.duration) {
+                        estimatedDuration = song.duration / 1000;
+                        debugLog(`使用歌曲信息中的时长: ${estimatedDuration}s`);
+                    }
+                    dom.progressBar.max = estimatedDuration;
+                    dom.durationDisplay.textContent = formatTime(estimatedDuration);
+                    
+                    // 标记这是一个估计的时长
+                    dom.progressBar.dataset.estimated = "true";
+                }
                 break;
             } catch (error) {
                 lastAudioError = error;
@@ -669,7 +693,6 @@ async function playSong(song, options = {}) {
                 }
             }
         }
-
         if (!selectedAudioUrl) {
             throw lastAudioError || new Error('音频加载失败');
         }
@@ -2105,24 +2128,33 @@ function handleVolumeChange(event) {
 
 function handleTimeUpdate() {
     const currentTime = dom.audioPlayer.currentTime || 0;
+    
+    // 修复：如果时长显示为0但音频正在播放，强制更新时长显示
+    if ((!dom.progressBar.max || dom.progressBar.max === 0) && 
+        !dom.audioPlayer.paused && 
+        currentTime > 0) {
+        debugLog("检测到时长显示异常，强制修复");
+        let estimatedDuration = 180; // 默认3分钟
+        
+        // 尝试从各种来源获取时长
+        if (state.currentSong && state.currentSong.duration) {
+            estimatedDuration = state.currentSong.duration / 1000;
+            debugLog(`使用歌曲数据中的时长: ${estimatedDuration}s`);
+        } else if (dom.audioPlayer.duration && Number.isFinite(dom.audioPlayer.duration) && dom.audioPlayer.duration > 0) {
+            estimatedDuration = dom.audioPlayer.duration;
+            debugLog(`使用audio元素中的时长: ${estimatedDuration}s`);
+        }
+        
+        dom.progressBar.max = estimatedDuration;
+        dom.durationDisplay.textContent = formatTime(estimatedDuration);
+        dom.progressBar.dataset.estimated = "true";
+        debugLog(`强制修复后的音频时长: ${estimatedDuration}s`);
+    }
+
     if (!state.isSeeking) {
         dom.progressBar.value = currentTime;
         dom.currentTimeDisplay.textContent = formatTime(currentTime);
         updateProgressBarBackground(currentTime, Number(dom.progressBar.max));
-    }
-
-    // 如果时长显示为0但音频正在播放，尝试重新获取时长
-    if ((!dom.progressBar.max || dom.progressBar.max === 0) && 
-        !dom.audioPlayer.paused && 
-        currentTime > 0) {
-        debugLog("检测到时长显示异常，尝试修复");
-        const currentDuration = dom.audioPlayer.duration;
-        if (Number.isFinite(currentDuration) && currentDuration > 0) {
-            dom.progressBar.max = currentDuration;
-            dom.durationDisplay.textContent = formatTime(currentDuration);
-            updateProgressBarBackground(currentTime, currentDuration);
-            debugLog(`修复后的音频时长: ${currentDuration}s`);
-        }
     }
 
     syncLyrics();
@@ -2133,6 +2165,7 @@ function handleTimeUpdate() {
         safeSetLocalStorage('currentPlaybackTime', currentTime.toFixed(1));
     }
 }
+
 
 function handleLoadedMetadata() {
     let duration = dom.audioPlayer.duration;
@@ -2487,21 +2520,42 @@ function checkPlaybackProgress() {
     
     const currentTime = dom.audioPlayer.currentTime || 0;
     const timeDiff = currentTime - state.lastPlaybackTime;
+    const duration = dom.audioPlayer.duration || Number(dom.progressBar.max) || 0;
     
-    // 如果2秒内播放进度几乎没有变化，认为卡住了
-    if (timeDiff < 0.1 && currentTime > 0) {
-        state.playbackStuckCount++;
-        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
-        
-        if (state.playbackStuckCount >= 1 && !state.isPlaybackStuck) {
-            handlePlaybackStuck();
+    // 特殊处理：如果时长无效但播放时间在增长，认为是正常播放
+    if (!Number.isFinite(duration) || duration === 0) {
+        if (timeDiff > 0) {
+            // 播放时间在增长，重置卡住计数
+            if (state.playbackStuckCount > 0) {
+                debugLog("播放时间在增长，重置卡住计数");
+                state.playbackStuckCount = 0;
+                state.isPlaybackStuck = false;
+            }
+        } else if (timeDiff < 0.1 && currentTime > 0) {
+            // 播放可能卡住
+            state.playbackStuckCount++;
+            debugLog(`播放可能卡住(无效时长): 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
+            
+            if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
+                handlePlaybackStuck();
+            }
         }
     } else {
-        // 播放正常，重置计数
-        if (state.playbackStuckCount > 0) {
-            debugLog("播放恢复正常");
-            state.playbackStuckCount = 0;
-            state.isPlaybackStuck = false;
+        // 原有的正常时长检测逻辑
+        if (timeDiff < 0.1 && currentTime > 0) {
+            state.playbackStuckCount++;
+            debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
+            
+            if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
+                handlePlaybackStuck();
+            }
+        } else {
+            // 播放正常，重置计数
+            if (state.playbackStuckCount > 0) {
+                debugLog("播放恢复正常");
+                state.playbackStuckCount = 0;
+                state.isPlaybackStuck = false;
+            }
         }
     }
     
@@ -2977,6 +3031,8 @@ function setupInteractions() {
         applyDynamicGradient();
     }
 
+    
+
     captureThemeDefaults();
     const savedTheme = safeGetLocalStorage("theme");
     const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -3017,13 +3073,23 @@ function setupInteractions() {
     });
      // 添加音频事件监听
     dom.audioPlayer.addEventListener('error', (e) => {
-        console.error('音频播放错误:', e);
-        stopPlaybackMonitoring();
-        stopLoadTimeoutMonitoring();
-        if (state.currentSong && !state.isAutoQualitySwitching) {
+    console.error('音频播放错误:', e);
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
+    
+    // 检查是否是时长相关问题
+    if (state.currentSong && !state.isAutoQualitySwitching) {
+        const error = dom.audioPlayer.error;
+        if (error && error.code === 3) { // MEDIA_ERR_DECODE
+            debugLog("检测到解码错误，可能是时长问题");
+            // 尝试切换到较低音质
+            handlePlaybackError(state.currentSong, new Error('音频解码错误'));
+        } else {
             handlePlaybackError(state.currentSong, new Error('音频播放错误'));
         }
-    });
+    }
+});
+
 
     dom.audioPlayer.addEventListener('loaderror', (e) => {
         console.error('音频加载错误:', e);
@@ -4768,6 +4834,83 @@ function waitForAudioReady(player) {
     });
 }
 
+// 在现有的 waitForAudioReady 函数之后，添加这个修复版本的函数
+function waitForAudioReadyWithFallback(player, song) {
+    if (!player) return Promise.resolve();
+    
+    // 如果已经有元数据，立即返回
+    if (player.readyState >= 1 && Number.isFinite(player.duration) && player.duration > 0) {
+        return Promise.resolve();
+    }
+    
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            player.removeEventListener('loadedmetadata', onLoaded);
+            player.removeEventListener('canplaythrough', onCanPlay);
+            player.removeEventListener('error', onError);
+            clearTimeout(timeoutId);
+        };
+        
+        const onLoaded = () => {
+            debugLog(`音频元数据加载成功: duration=${player.duration}`);
+            if (Number.isFinite(player.duration) && player.duration > 0) {
+                cleanup();
+                resolve();
+            } else {
+                // 即使loadedmetadata触发，但duration无效，使用备选方案
+                handleInvalidDuration();
+            }
+        };
+        
+        const onCanPlay = () => {
+            debugLog(`音频可以播放: duration=${player.duration}, readyState=${player.readyState}`);
+            if (Number.isFinite(player.duration) && player.duration > 0) {
+                cleanup();
+                resolve();
+            } else {
+                // canplaythrough触发但duration无效
+                handleInvalidDuration();
+            }
+        };
+        
+        const onError = (error) => {
+            debugLog(`音频加载错误: ${error}`);
+            cleanup();
+            reject(new Error('音频加载失败'));
+        };
+        
+        const handleInvalidDuration = () => {
+            debugLog("音频时长无效，使用备选方案继续播放");
+            cleanup();
+            resolve(); // 仍然resolve，避免阻塞播放
+        };
+        
+        // 缩短超时时间到5秒，更快地进入备选方案
+        const timeoutId = setTimeout(() => {
+            debugLog("音频元数据加载超时，使用备选方案");
+            cleanup();
+            resolve(); // 超时后仍然resolve，确保播放可以继续
+        }, 5000);
+        
+        player.addEventListener('loadedmetadata', onLoaded, { once: true });
+        player.addEventListener('canplaythrough', onCanPlay, { once: true });
+        player.addEventListener('error', onError, { once: true });
+        
+        // 如果音频已经在加载中，检查当前状态
+        if (player.readyState >= 1) {
+            setTimeout(() => {
+                if (Number.isFinite(player.duration) && player.duration > 0) {
+                    cleanup();
+                    resolve();
+                } else {
+                    // 如果readyState足够高但duration仍然无效，也使用备选方案
+                    handleInvalidDuration();
+                }
+            }, 100);
+        }
+    });
+}
+
 async function playSong(song, options = {}) {
     const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
 
@@ -4995,14 +5138,30 @@ function scheduleDeferredSongAssets(song, playPromise) {
 
 // 修复：自动播放下一首 - 支持播放模式和雷达自动添加
 async function autoPlayNext() {
+    // 检查当前播放状态，如果时长无效但播放已结束，也触发下一首
+    const currentTime = dom.audioPlayer.currentTime || 0;
+    const duration = dom.audioPlayer.duration || Number(dom.progressBar.max) || 0;
+    
+    // 如果检测到播放结束但时长显示有问题，强制触发下一首
+    if (dom.audioPlayer.ended || 
+        (currentTime > 0 && duration > 0 && currentTime >= duration - 1) ||
+        (currentTime > 0 && !Number.isFinite(duration) && dom.audioPlayer.paused)) {
+        debugLog("检测到播放结束，准备播放下一首");
+    } else {
+        return; // 没有播放结束，不处理
+    }
+    
     if (dom.audioPlayer && dom.audioPlayer.__solaraMediaSessionHandledEnded === 'skip') {
         dom.audioPlayer.__solaraMediaSessionHandledEnded = false;
         return;
     }
+    
+    // 原有的单曲循环逻辑
     if (state.playMode === "single") {
-        // 单曲循环
         dom.audioPlayer.currentTime = 0;
-        dom.audioPlayer.play();
+        dom.audioPlayer.play().catch(error => {
+            console.error('单曲循环播放失败:', error);
+        });
         return;
     }
 
@@ -5018,6 +5177,22 @@ async function autoPlayNext() {
     
     playNext();
     updatePlayPauseButton();
+}
+
+// 添加一个强制结束当前播放并切换下一首的函数
+function forcePlayNext() {
+    debugLog("强制切换到下一首歌曲");
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
+    resetQualityState();
+    
+    const nextSong = getNextSong();
+    if (nextSong) {
+        state.currentSong = nextSong;
+        updateCurrentSongInfo(nextSong, { loadArtwork: true });
+    }
+    
+    playNext();
 }
 
 // 检查并自动添加雷达歌曲
@@ -5913,6 +6088,23 @@ window.refreshDuration = function() {
     } else {
         return `无法获取有效时长: ${duration}`;
     }
+};
+
+window.fixDurationIssue = function() {
+    debugLog("手动修复时长问题");
+    const currentTime = dom.audioPlayer.currentTime || 0;
+    let estimatedDuration = 180;
+    
+    if (state.currentSong && state.currentSong.duration) {
+        estimatedDuration = state.currentSong.duration / 1000;
+    }
+    
+    dom.progressBar.max = estimatedDuration;
+    dom.durationDisplay.textContent = formatTime(estimatedDuration);
+    updateProgressBarBackground(currentTime, estimatedDuration);
+    
+    debugLog(`手动设置时长: ${estimatedDuration}s, 当前时间: ${currentTime}s`);
+    return `时长已手动设置为 ${formatTime(estimatedDuration)}`;
 };
 
 // ==== 应用初始化 ====
