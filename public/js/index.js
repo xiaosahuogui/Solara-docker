@@ -751,13 +751,13 @@ async function playSong(song, options = {}) {
     }
 }
 
-// 添加播放错误处理函数
+// 修改后的 handlePlaybackError 函数
 function handlePlaybackError(song, error) {
     stopPlaybackMonitoring();
     stopLoadTimeoutMonitoring();
     
     state.qualityRetryCount++;
-    debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}`);
+    debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}, 当前音源=${song.source}`);
 
     // 如果超过最大重试次数，切换到下一首
     if (state.qualityRetryCount >= state.maxQualityRetries) {
@@ -776,7 +776,50 @@ function handlePlaybackError(song, error) {
         return;
     }
 
-    // 尝试下一个较低音质
+    // 首先尝试切换音源
+    if (state.qualityRetryCount <= 2) { // 前两次重试尝试切换音源
+        const currentSource = song.source || state.searchSource;
+        const otherSources = SOURCE_OPTIONS.filter(opt => opt.value !== currentSource);
+        
+        if (otherSources.length > 0) {
+            const nextSource = otherSources[0].value; // 取第一个其他音源
+            debugLog(`尝试切换音源: ${currentSource} -> ${nextSource}`);
+            showNotification(`正在尝试 ${otherSources[0].label} 音源`, 'info');
+            
+            // 使用新音源重新搜索并播放
+            setTimeout(async () => {
+                try {
+                    const results = await API.search(`${song.name} ${song.artist}`, nextSource, 1, 1);
+                    if (results && results.length > 0) {
+                        const newSong = results[0];
+                        debugLog(`找到替代歌曲: ${newSong.name} (${newSong.source})`);
+                        await playSong(newSong, {
+                            autoplay: true,
+                            startTime: state.currentPlaybackTime,
+                            preserveProgress: true,
+                            isRetry: true
+                        });
+                        return;
+                    } else {
+                        // 没有找到替代歌曲，继续尝试降低音质
+                        tryLowerQuality(song);
+                    }
+                } catch (searchError) {
+                    console.warn('切换音源搜索失败:', searchError);
+                    // 搜索失败，继续尝试降低音质
+                    tryLowerQuality(song);
+                }
+            }, 500);
+            return;
+        }
+    }
+    
+    // 如果切换音源失败或超过尝试次数，尝试降低音质
+    tryLowerQuality(song);
+}
+
+// 新增辅助函数：尝试降低音质
+function tryLowerQuality(song) {
     const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
     if (nextQuality) {
         state.currentQualityAttempt = nextQuality;
@@ -809,6 +852,7 @@ function handlePlaybackError(song, error) {
         playNext();
     }
 }
+
 
 // 新增辅助函数：获取下一首歌曲
 function getNextSong() {
@@ -2448,7 +2492,48 @@ function handleLoadTimeout() {
     
     debugLog(`加载超时处理: 当前音质=${state.currentQualityAttempt}, 等待时间=${Date.now() - state.loadStartTime}ms`);
     
-    // 尝试切换到更低音质
+    // 首先尝试切换音源
+    if (state.qualityRetryCount <= 2) {
+        const currentSource = state.currentSong.source || state.searchSource;
+        const otherSources = SOURCE_OPTIONS.filter(opt => opt.value !== currentSource);
+        
+        if (otherSources.length > 0) {
+            const nextSource = otherSources[0].value;
+            debugLog(`加载超时，尝试切换音源: ${currentSource} -> ${nextSource}`);
+            showNotification(`加载超时，尝试 ${otherSources[0].label} 音源`, 'warning');
+            
+            setTimeout(async () => {
+                try {
+                    const results = await API.search(`${state.currentSong.name} ${state.currentSong.artist}`, nextSource, 1, 1);
+                    if (results && results.length > 0) {
+                        const newSong = results[0];
+                        debugLog(`找到替代歌曲: ${newSong.name} (${newSong.source})`);
+                        await playSong(newSong, {
+                            autoplay: true,
+                            startTime: 0, // 从头开始
+                            preserveProgress: false,
+                            isRetry: true
+                        });
+                        return;
+                    } else {
+                        // 没有找到替代歌曲，尝试降低音质
+                        tryLowerQualityDueToLoadTimeout();
+                    }
+                } catch (searchError) {
+                    console.warn('切换音源搜索失败:', searchError);
+                    tryLowerQualityDueToLoadTimeout();
+                }
+            }, 500);
+            return;
+        }
+    }
+    
+    // 如果切换音源失败或超过尝试次数，尝试降低音质
+    tryLowerQualityDueToLoadTimeout();
+}
+
+// 新增辅助函数：因加载超时尝试降低音质
+function tryLowerQualityDueToLoadTimeout() {
     const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
     if (nextQuality) {
         state.currentQualityAttempt = nextQuality;
@@ -2456,7 +2541,6 @@ function handleLoadTimeout() {
         debugLog(`加载超时，自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
         showNotification(`加载超时，切换为 ${qualityInfo?.label || nextQuality}`, 'warning');
         
-        // 使用新音质重新播放
         setTimeout(() => {
             replayCurrentSongDueToLoadTimeout();
         }, 500);
@@ -2496,12 +2580,12 @@ function startPlaybackMonitoring() {
     state.playbackStuckCount = 0;
     state.isPlaybackStuck = false;
     
-    // 每2秒检查一次播放状态
+    // 修改这里：将检测间隔从2秒改为1.5秒，这样2次检测就是3秒
     state.playbackStuckTimer = setInterval(() => {
         checkPlaybackProgress();
-    }, 2000);
+    }, 1500); // 从2000改为1500毫秒
     
-    debugLog("开始播放状态监控");
+    debugLog("开始播放状态监控，检测间隔: 1.5秒");
 }
 
 function stopPlaybackMonitoring() {
@@ -2534,8 +2618,9 @@ function checkPlaybackProgress() {
         } else if (timeDiff < 0.1 && currentTime > 0) {
             // 播放可能卡住
             state.playbackStuckCount++;
-            debugLog(`播放可能卡住(无效时长): 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
+            debugLog(`播放可能卡住(无效时长): 进度变化=${timeDiff.toFixed(3)}秒, 卡住计数=${state.playbackStuckCount}`);
             
+            // 修改这里：3秒卡住就触发（2次检测 × 1.5秒间隔 = 3秒）
             if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
                 handlePlaybackStuck();
             }
@@ -2544,8 +2629,9 @@ function checkPlaybackProgress() {
         // 原有的正常时长检测逻辑
         if (timeDiff < 0.1 && currentTime > 0) {
             state.playbackStuckCount++;
-            debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(1)}秒, 卡住计数=${state.playbackStuckCount}`);
+            debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(3)}秒, 卡住计数=${state.playbackStuckCount}`);
             
+            // 修改这里：3秒卡住就触发（2次检测 × 1.5秒间隔 = 3秒）
             if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
                 handlePlaybackStuck();
             }
@@ -2568,9 +2654,50 @@ function handlePlaybackStuck() {
     }
     
     state.isPlaybackStuck = true;
-    debugLog(`播放卡住处理: 当前音质=${state.currentQualityAttempt}, 卡住计数=${state.playbackStuckCount}`);
+    debugLog(`播放卡住处理: 当前音质=${state.currentQualityAttempt}, 卡住计数=${state.playbackStuckCount}, 当前音源=${state.currentSong.source}`);
     
-    // 尝试切换到更低音质
+    // 首先尝试切换音源
+    if (state.qualityRetryCount <= 2) {
+        const currentSource = state.currentSong.source || state.searchSource;
+        const otherSources = SOURCE_OPTIONS.filter(opt => opt.value !== currentSource);
+        
+        if (otherSources.length > 0) {
+            const nextSource = otherSources[0].value;
+            debugLog(`播放卡住，尝试切换音源: ${currentSource} -> ${nextSource}`);
+            showNotification(`播放卡住，尝试 ${otherSources[0].label} 音源`, 'warning');
+            
+            setTimeout(async () => {
+                try {
+                    const results = await API.search(`${state.currentSong.name} ${state.currentSong.artist}`, nextSource, 1, 1);
+                    if (results && results.length > 0) {
+                        const newSong = results[0];
+                        debugLog(`找到替代歌曲: ${newSong.name} (${newSong.source})`);
+                        await playSong(newSong, {
+                            autoplay: true,
+                            startTime: state.currentPlaybackTime,
+                            preserveProgress: true,
+                            isRetry: true
+                        });
+                        return;
+                    } else {
+                        // 没有找到替代歌曲，尝试降低音质
+                        tryLowerQualityDueToStuck();
+                    }
+                } catch (searchError) {
+                    console.warn('切换音源搜索失败:', searchError);
+                    tryLowerQualityDueToStuck();
+                }
+            }, 500);
+            return;
+        }
+    }
+    
+    // 如果切换音源失败或超过尝试次数，尝试降低音质
+    tryLowerQualityDueToStuck();
+}
+
+// 新增辅助函数：因播放卡住尝试降低音质
+function tryLowerQualityDueToStuck() {
     const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
     if (nextQuality) {
         state.currentQualityAttempt = nextQuality;
@@ -2578,7 +2705,6 @@ function handlePlaybackStuck() {
         debugLog(`播放卡住，自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
         showNotification(`播放卡住，切换为 ${qualityInfo?.label || nextQuality}`, 'warning');
         
-        // 使用新音质重新播放
         setTimeout(() => {
             replayCurrentSongWithNewQuality();
         }, 500);
@@ -2591,7 +2717,6 @@ function handlePlaybackStuck() {
         playNext();
     }
 }
-
 function replayCurrentSongWithNewQuality() {
     if (!state.currentSong) return;
     
@@ -6111,3 +6236,30 @@ window.fixDurationIssue = function() {
 // 替换原有的立即执行代码，改为调用initializeApp
 document.addEventListener('DOMContentLoaded', initializeApp);
 dom.audioPlayer.addEventListener("ended", autoPlayNext);
+// 新增：测试播放卡住检测
+window.testPlaybackStuck = function() {
+    debugLog("手动触发播放卡住测试");
+    if (state.currentSong) {
+        // 模拟播放卡住：将上次播放时间设置为当前时间，这样下次检测就会认为没有进度
+        state.lastPlaybackTime = dom.audioPlayer.currentTime || 0;
+        state.playbackStuckCount = 1; // 设置为1，下一次检测就会触发卡住
+        debugLog("已设置播放卡住测试状态，下次检测将触发卡住处理");
+        showNotification("已设置播放卡住测试，等待1.5秒后触发", "info");
+    } else {
+        debugLog("没有正在播放的歌曲，无法测试播放卡住");
+        showNotification("没有正在播放的歌曲，无法测试", "error");
+    }
+};
+
+// 新增：获取播放监控状态
+window.getPlaybackMonitorState = function() {
+    return {
+        lastPlaybackTime: state.lastPlaybackTime,
+        currentPlaybackTime: dom.audioPlayer.currentTime || 0,
+        timeDiff: (dom.audioPlayer.currentTime || 0) - state.lastPlaybackTime,
+        playbackStuckCount: state.playbackStuckCount,
+        isPlaybackStuck: state.isPlaybackStuck,
+        monitoringInterval: 1500,
+        stuckThreshold: 2 // 2次检测 × 1.5秒 = 3秒
+    };
+};
