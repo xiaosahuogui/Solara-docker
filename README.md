@@ -30,8 +30,8 @@ compose build --no-cache
 docker compose up -d
 
 近期修改：
-1. 更换音源API接口
-2. 音源改为wy,kw和qq,除了wy之外，其他两个均支持24bit flac
+1. 更换音源API接口，目前有问题，还是默认使用GD音乐台
+2. 音源改为wy,kw和qq
 3. 播放时遇到加载失败或播放进度卡住时，先尝试切换音源，再尝试降低音质，如果还是无法播放就跳过，播放下一首。
 4. 探索雷达功能做了修改，默认使用kuwo搜索两个关键词，筛选30首音乐自动播放，播放列表快结束时静默添加20首歌曲。
 5. 探索雷达的歌曲关键词库在/public/js/index.js文件中,找到 const RADAR_KEYWORDS 即可自行修改。
