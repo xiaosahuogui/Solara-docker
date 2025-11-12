@@ -80,14 +80,32 @@ const BLOCKED_KEYWORDS = [
     "Remix", "remix", "REMIX", "混音", "Remix:", "remix:", "REMIX:",
     "Live", "live", "LIVE", "现场", "演唱会", "Live:", "live:", "LIVE:",
     "合集", "精选", "串烧", "DJ", "dj", "D.J.",
-    "播客", "Podcast", "podcast", "PODCAST",
-    "伴奏", "纯音乐", "Instrumental", "instrumental",
+    "播客", "Podcast", "podcast", "PODCAST", "电台节目", "广播剧",
+    "伴奏", "纯音乐", "Instrumental", "instrumental", "背景音乐",
     "Demo", "demo", "DEMO", "试听", "原唱", "翻奏",
     "自制", "铃声", "手机铃声", "网友自制",
-    "教学", "教程", "练习",
-    "片段", "剪辑", "剪切",
+    "教学", "教程", "练习", "乐理", "指法",
+    "片段", "剪辑", "剪切", "节选", "精彩片段",
     "非原唱", "不是原唱",
-    "伴奏版", "纯音乐版"
+    "伴奏版", "纯音乐版", "无人声", "无演唱",
+    
+    // 新增屏蔽关键词
+    "讲故事", "睡前故事", "儿童故事", "童话故事", "有声书", "有声小说",
+    "广播小说", "小说连载", "故事会", "寓言故事",
+    "播客节目", "谈话节目", "访谈", "对谈", "聊天", "脱口秀",
+    "钢琴版", "吉他版", "小提琴版", "古筝版", "二胡版", "器乐版",
+    "乐器演奏", "演奏版", "独奏", "合奏", "即兴演奏",
+    "配乐", "BGM", "背景音乐", "环境音乐",
+    "ASMR", "asmr", "白噪音", "放松音乐", "冥想音乐",
+    "录音室", "排练", "练习曲", "音阶练习",
+    "消音版", "卡拉OK版", "KTV版", "跟唱版",
+    "变速", "升降调", "慢速版", "快速版",
+    "教学版", "示范", "分解教学", "入门教学",
+    "原声带", "OST", "影视原声", "游戏原声",
+    "试听版", "预览版", "短版", "不完整版",
+    "混剪", "Mashup", "mashup", "拼接版",
+    "反应视频", "Reaction", "reaction", "乐评",
+    "解析", "分析", "点评", "鉴赏"
 ];
 // 在 state 对象之前添加
 let mobilePanelState = {
@@ -518,18 +536,20 @@ const SOURCE_OPTIONS = [
 const RADAR_KEYWORDS = [
     // 歌曲风格
     "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "蓝调",
-    "轻音乐", "流行摇滚", "独立音乐", "民谣摇滚", "电子舞曲",
-    "轻爵士", "Funk", "Soul Music", "新世纪音乐", "电影原声", "动漫音乐",
-    "乡村", "雷鬼", "世界音乐", "舞曲", "Bossa Nova", "流行R&B",
-    "嘻哈", "拉丁", "古典流行", "氛围音乐", "钢琴流行", "爵士摇滚",
-    "灵魂R&B", "电子流行", "独立流行", "另类摇滚", "后摇滚",
+    "Blues", "Rock & Roll", "Hard Core",
+    "Funk", "Soul Music", "Bossa Nova", "R&B", "Rap", "拉丁",
+    "Indie", "金属", "朋克", "工业摇滚", 
+    "Trap", "Future Bass", "Dubstep", "Techno", "House", "Progressive House", "Trance", "Ambient",
+    "New Wave", "Synthwave", "Post-Punk", "Gothic", "Folk Rock", "Post-Rock", "Hardstyle", "J-Pop", "K-Pop",
+    "Reggaeton", "Tropical House", "Soul", "Chillwave", "Vaporwave", "Lo-fi Hip Hop", "Disco", "Folk", "Psychedelic",
+    "Noise Rock", "Tech House", "Deep House", "Garage Rock", "Bluegrass", "Glam Rock", "Baroque Pop", "Alternative Rock",
 
     // 国内热门歌手
     "周杰伦", "邓紫棋", "李健", "毛不易", "薛之谦", "张韶涵", "王心凌",
     "赵雷", "张含韵", "SHE", "林俊杰", "蔡依林", "王力宏", "五月天",
     "张靓颖", "李荣浩", "田馥甄", "林宥嘉", "张杰", "周深", "任贤齐",
-    "张信哲", "费玉清", "张惠妹", "黄子韬", "刀郎", "腾格尔",
-    "陈奕迅", "容祖儿", "李宇春", "李玉刚", "米津玄师", "易烊千玺",
+    "张信哲", "费玉清", "张惠妹", "刀郎", "腾格尔",
+    "陈奕迅", "容祖儿", "李玉刚", "米津玄师", "易烊千玺",
     "周华健", "刘德华", "张学友", "陈慧娴", "林志炫", "莫文蔚", "潘玮柏",
 
     // 国际热门歌手
@@ -545,7 +565,39 @@ const RADAR_KEYWORDS = [
     "Red Hot Chili Peppers", "Foo Fighters", "Queen", "The Beatles",
     "Michael Jackson", "Elton John", "Madonna", "Whitney Houston",
     "Celine Dion", "BTS", "BLACKPINK", "EXO", "TWICE", "BIGBANG", "SEVENTEEN",
-    "NCT", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa"
+    "NCT", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa",
+
+    // 国内知名乐队（包含活跃和已解散的）
+    "五月天", "苏打绿", "鱼丁糸", "草东没有派对", 
+    "新裤子", "痛仰", "反光镜", "逃跑计划",
+    "万能青年旅店", "二手玫瑰", "黑豹", "唐朝",
+    "Beyond", "花儿乐队", "F.I.R.飞儿乐团", "S.H.E",
+    "凤凰传奇", "牛奶咖啡", "GALA", "后海大鲨鱼",
+    "海龟先生", "刺猬", "Joyside", "重塑雕像的权利",
+    "声音碎片", "达达乐队", "木马", "低苦艾",
+    "顶楼的马戏团", "C-BLOCK", "Higher Brothers", "落日飞车",
+    "告五人", "Deca Joins", "椅子乐团", "傻子与白痴",
+    "康姆士", "岛屿心情", "对角巷", "白日密语",
+    "回春丹", "Schoolgirl byebye", "Chinese Football", "C.S.B.Q",
+    "ETA乐队", "表情银行", "缺省", "海朋森",
+    "野外合作社", "闪星", "Life Awaits", "郁乐队",
+    
+    // 补充的热门已解散乐队
+    "小虎队", "飞轮海", "信乐团", "水木年华",
+    "无印良品", "羽泉", "零点乐队", "鲍家街43号",
+    "轮回乐队", "超载乐队", "面孔乐队", "指南针乐队",
+    "眼镜蛇乐队", "地下婴儿", "新裤子", "脑浊",
+    "挂在盒子上", "生命之饼", "AK-47", "夜叉",
+    "扭曲的机器", "T9", "皇冠", "窒息",
+    "战斧", "春秋", "冥界", "施教日",
+
+    // 国际知名乐队（热门/经典/已解散）
+    "The Beatles", "Queen", "The Rolling Stones", "Nirvana", "Led Zeppelin", "Pink Floyd",
+    "Metallica", "AC/DC", "Guns N' Roses", "Linkin Park", "Red Hot Chili Peppers", 
+    "U2", "Coldplay", "Foo Fighters", "Imagine Dragons", "Maroon 5", 
+    "Pearl Jam", "Radiohead", "The Killers", "Arctic Monkeys", "OneRepublic",
+    "Green Day", "The Who", "The Doors", "Black Sabbath", "Bon Jovi",
+    "Oasis", "The Cure", "Muse", "Paramore", "Kings of Leon"
 ];
 
 
@@ -569,12 +621,20 @@ function getNextLowerQuality(currentQuality) {
     return nextQuality ? nextQuality.value : null;
 }
 
-// 新增：获取下一个备选音源
+// 修改：获取下一个备选音源 - 优先网易，然后JOOX
 function getNextSource(currentSource) {
-    const sources = SOURCE_OPTIONS.map(opt => opt.value);
-    const currentIndex = sources.indexOf(currentSource);
-    const nextIndex = (currentIndex + 1) % sources.length;
-    return sources[nextIndex];
+    const sources = ["netease", "joox", "kuwo"]; // 优先顺序：网易 -> JOOX -> 酷我
+    
+    // 如果当前不是优先音源，从网易开始
+    if (currentSource !== "netease") {
+        return "netease";
+    }
+    // 如果当前是网易，切换到JOOX
+    if (currentSource === "netease") {
+        return "joox";
+    }
+    // 如果当前是JOOX，回到原音源（酷我）
+    return "kuwo";
 }
 
 // 新增：通过搜索获取相同歌曲在不同音源的信息
@@ -606,33 +666,65 @@ async function findSongInOtherSource(song, targetSource) {
     return null;
 }
 
-// 新增：音源切换处理
+// 修改：音源切换处理 - 添加状态检查防止重复切换
 async function handleSourceSwitch(song, error) {
+    // 检查当前歌曲是否已经改变，如果已经改变则停止重试
+    if (state.currentSong !== song) {
+        debugLog(`歌曲已改变，停止音源切换重试`);
+        return;
+    }
+    
     state.sourceRetryCount = (state.sourceRetryCount || 0) + 1;
     const currentSource = state.currentSourceAttempt || state.searchSource;
     const nextSource = getNextSource(currentSource);
     
     debugLog(`尝试切换音源: ${currentSource} -> ${nextSource}, 音源重试次数=${state.sourceRetryCount}`);
 
-    // 如果超过最大音源重试次数，切换到下一首
+    // 如果超过最大音源重试次数，才尝试降低音质
     if (state.sourceRetryCount > state.maxSourceRetries) {
-        debugLog(`达到音源最大重试次数，切换到下一首歌曲`);
-        showNotification(`所有音源均无法播放 ${song.name}，自动切换下一首`, 'error');
-        resetQualityState();
-        resetSourceState();
+        debugLog(`所有音源均无法播放，尝试降低音质`);
+        state.qualityRetryCount++;
         
-        // 切换到下一首前，先更新歌曲信息
-        const nextSong = getNextSong();
-        if (nextSong) {
-            state.currentSong = nextSong;
-            updateCurrentSongInfo(nextSong, { loadArtwork: true });
+        // 尝试下一个较低音质
+        const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
+        if (nextQuality) {
+            state.currentQualityAttempt = nextQuality;
+            const qualityInfo = QUALITY_LEVELS.find(q => q.value === nextQuality);
+            debugLog(`自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
+            showNotification(`音质切换: ${qualityInfo?.label || nextQuality}`, 'info');
+            
+            // 使用新音质重新播放（回到原音源）
+            state.currentSourceAttempt = state.searchSource; // 回到原始音源
+            state.sourceRetryCount = 0; // 重置音源重试计数
+            
+            setTimeout(() => {
+                playSong(song, {
+                    autoplay: true,
+                    startTime: state.currentPlaybackTime,
+                    preserveProgress: true,
+                    isRetry: true
+                });
+            }, 500);
+        } else {
+            // 没有更低的音质可用，切换到下一首
+            debugLog(`所有音质均无法播放，切换到下一首歌曲`);
+            showNotification(`所有音源和音质均无法播放 ${song.name}，自动切换下一首`, 'error');
+            resetQualityState();
+            resetSourceState();
+            
+            // 切换到下一首前，先更新歌曲信息
+            const nextSong = getNextSong();
+            if (nextSong) {
+                state.currentSong = nextSong;
+                updateCurrentSongInfo(nextSong, { loadArtwork: true });
+            }
+            
+            playNext();
         }
-        
-        playNext();
         return;
     }
 
-    // 尝试在下一个音源中查找相同歌曲
+    // 优先尝试在下一个音源中查找相同歌曲
     try {
         showNotification(`正在尝试从${SOURCE_OPTIONS.find(s => s.value === nextSource)?.label}播放...`, 'info');
         
@@ -648,28 +740,43 @@ async function handleSourceSwitch(song, error) {
             
             // 使用新音源的歌曲信息播放
             setTimeout(() => {
-                playSong(newSong, {
-                    autoplay: true,
-                    startTime: state.currentPlaybackTime,
-                    preserveProgress: true,
-                    isRetry: true
-                });
+                // 再次检查当前歌曲是否仍然相同
+                if (state.currentSong === song) {
+                    playSong(newSong, {
+                        autoplay: true,
+                        startTime: state.currentPlaybackTime,
+                        preserveProgress: true,
+                        isRetry: true
+                    });
+                } else {
+                    debugLog(`歌曲已改变，取消音源切换播放`);
+                }
             }, 500);
         } else {
             // 没有找到相同歌曲，继续尝试下一个音源
             debugLog(`在音源 ${nextSource} 中未找到相同歌曲，继续尝试下一个音源`);
             state.currentSourceAttempt = nextSource;
-            handleSourceSwitch(song, error);
+            // 使用setTimeout避免递归调用栈溢出
+            setTimeout(() => {
+                if (state.currentSong === song) {
+                    handleSourceSwitch(song, error);
+                }
+            }, 100);
         }
     } catch (sourceError) {
         console.error('音源切换失败:', sourceError);
         // 音源搜索失败，继续尝试下一个音源
         state.currentSourceAttempt = nextSource;
-        handleSourceSwitch(song, error);
+        // 使用setTimeout避免递归调用栈溢出
+        setTimeout(() => {
+            if (state.currentSong === song) {
+                handleSourceSwitch(song, error);
+            }
+        }, 100);
     }
 }
 
-// 新增：重置音源状态
+// 修改：重置音源状态
 function resetSourceState() {
     state.currentSourceAttempt = state.searchSource;
     state.sourceRetryCount = 0;
@@ -679,10 +786,11 @@ function getLowestQuality() {
     return QUALITY_LEVELS[QUALITY_LEVELS.length - 1].value;
 }
 
+// 修改：重置音质状态时也重置音源切换标志
 function resetQualityState() {
     state.currentQualityAttempt = state.playbackQuality;
     state.qualityRetryCount = 0;
-    state.isAutoQualitySwitching = false;
+    state.isAutoQualitySwitching = false; // 重置标志
     state.playbackStuckCount = 0;
     state.isPlaybackStuck = false;
     state.isWaitingForPlayback = false;
@@ -833,42 +941,29 @@ async function playSong(song, options = {}) {
     }
 }
 
+// 修改：播放错误处理 - 优先切换音源而不是音质
 function handlePlaybackError(song, error) {
+    // 检查是否已经在处理音源切换
+    if (state.isAutoQualitySwitching) {
+        debugLog(`已经在进行音质/音源切换，忽略重复错误`);
+        return;
+    }
+    
     stopPlaybackMonitoring();
     stopLoadTimeoutMonitoring();
     
-    state.qualityRetryCount++;
-    debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}, 当前音源=${state.currentSourceAttempt}`);
+    debugLog(`播放错误处理: 当前音质=${state.currentQualityAttempt}, 当前音源=${state.currentSourceAttempt}`);
 
-    // 如果超过最大重试次数，尝试切换音源
-    if (state.qualityRetryCount >= state.maxQualityRetries) {
-        debugLog(`达到音质最大重试次数，尝试切换音源`);
-        handleSourceSwitch(song, error);
-        return;
-    }
-
-    // 尝试下一个较低音质
-    const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
-    if (nextQuality) {
-        state.currentQualityAttempt = nextQuality;
-        const qualityInfo = QUALITY_LEVELS.find(q => q.value === nextQuality);
-        debugLog(`自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
-        showNotification(`音质切换: ${qualityInfo?.label || nextQuality}`, 'info');
-        
-        // 使用新音质重新播放
-        setTimeout(() => {
-            playSong(song, {
-                autoplay: true,
-                startTime: state.currentPlaybackTime,
-                preserveProgress: true,
-                isRetry: true
-            });
-        }, 500);
-    } else {
-        // 没有更低的音质可用，尝试切换音源
-        debugLog(`无更低音质可用，尝试切换音源`);
-        handleSourceSwitch(song, error);
-    }
+    // 设置标志防止重复处理
+    state.isAutoQualitySwitching = true;
+    
+    // 优先尝试切换音源，而不是降低音质
+    handleSourceSwitch(song, error);
+    
+    // 一段时间后重置标志
+    setTimeout(() => {
+        state.isAutoQualitySwitching = false;
+    }, 3000);
 }
 
 // 新增辅助函数：获取下一首歌曲
@@ -1207,7 +1302,7 @@ const state = {
     isWaitingForPlayback: false, // 是否在等待播放开始
     currentSourceAttempt: savedSearchSource, // 当前尝试的音源
     sourceRetryCount: 0, // 音源重试次数
-    maxSourceRetries: SOURCE_OPTIONS.length - 1, // 最大音源重试次数
+    maxSourceRetries: 2, // 修改这里：网易 -> JOOX -> 回到原音源降质
 };
 
 // ==== Media Session integration (Safari/iOS Lock Screen) ====
@@ -4769,6 +4864,7 @@ function waitForAudioReady(player) {
     });
 }
 
+// 修改：播放成功时重置状态
 async function playSong(song, options = {}) {
     const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
 
@@ -4777,6 +4873,9 @@ async function playSong(song, options = {}) {
         resetQualityState();
         state.currentSourceAttempt = song.source || state.searchSource;
     }
+    
+    // 重置自动切换标志
+    state.isAutoQualitySwitching = false;
 
     // 停止之前的监控
     stopPlaybackMonitoring();
