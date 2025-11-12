@@ -46,7 +46,10 @@ const BLOCKED_KEYWORDS = [
 6. 搜索结果界面添加了播放全部按钮，可以一键播放页面已加载的所有歌曲。
 7. 添加密码验证，只有输入密码登录才能使用。
 8. 移动端页面风格改了下，添加了播放列表自动定位到正在播放的歌曲。如果不喜欢这个风格或者有其他问题，请自己修改mobile.css文件。
-
+<img width="1482" height="899" alt="ScreenShot_2025-11-12_191402_577" src="https://github.com/user-attachments/assets/5f6b5d5c-7ec6-45a4-a1f5-c58567b4b99e" />
+![微信图片_20251112191631_235_26](https://github.com/user-attachments/assets/8f1c866a-6181-4db8-9279-46abafc6e508)
+![微信图片_20251112191635_238_26](https://github.com/user-attachments/assets/71c1995b-74f9-4a7a-b50f-5499e039fe95)
+![微信图片_20251112191634_237_26](https://github.com/user-attachments/assets/3deba994-cd58-4214-9d23-2154c9d200e0)
 
 部署完可以使用自己的域名反向代理 http://127.0.0.1:3001
 
