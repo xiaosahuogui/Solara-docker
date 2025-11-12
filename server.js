@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
-const cookieSession = require('cookie-session'); // 使用 cookie-session
+const cookieSession = require('cookie-session');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,17 +12,21 @@ const AUTH_PASSWORD = process.env.SOLARA_PASSWORD || 'solara123';
 // 信任代理（如果部署在反向代理后面）
 app.set('trust proxy', 1);
 
-// Cookie Session 配置
+// Cookie Session配置 - 替换 express-session
+const sessionKeys = process.env.SESSION_KEYS 
+  ? process.env.SESSION_KEYS.split(',') 
+  : ['solara-music-secret-key-1', 'solara-music-secret-key-2'];
+
 app.use(cookieSession({
   name: 'solara.sid',
-  keys: [process.env.SESSION_SECRET || 'solara-music-secret-key-change-in-production'],
+  keys: sessionKeys,
   maxAge: 24 * 60 * 60 * 1000, // 24小时
-  secure: process.env.NODE_ENV === 'production', // 生产环境需要HTTPS
+  secure: process.env.NODE_ENV === 'production', // 生产环境使用HTTPS
   httpOnly: true,
   sameSite: 'lax'
 }));
 
-// CORS 配置 - 修复版本
+// CORS 配置
 app.use(cors({
   origin: true, // 允许当前origin
   credentials: true, // 允许携带凭证
@@ -40,7 +44,7 @@ const requireAuth = (req, res, next) => {
     next();
   } else {
     // 对于 API 请求返回 JSON 错误
-    if (req.path.startsWith('/api/') && !req.path.startsWith('/api/login') && !req.path.startsWith('/api/auth-status')) {
+    if (req.path.startsWith('/api/') && !req.path.startsWith('/api/login') && !req.path.startsWith('/api/auth-status') && !req.path.startsWith('/api/health')) {
       res.status(401).json({ error: '需要身份验证' });
     } else {
       // 对于页面请求重定向到登录页
@@ -80,7 +84,7 @@ app.post('/api/login', express.json(), (req, res) => {
 
 app.post('/api/logout', (req, res) => {
   console.log('用户退出登录');
-  req.session = null; // 对于 cookie-session，设置为 null 来清除
+  req.session = null; // 清除 cookie session
   res.json({ success: true, message: '已退出登录' });
 });
 
@@ -92,6 +96,16 @@ app.get('/api/auth-status', (req, res) => {
     serverTimeLocal: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
   };
   res.json(status);
+});
+
+// 健康检查端点
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  });
 });
 
 // 导入路由
@@ -126,11 +140,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: '服务器内部错误' });
 });
 
+// 404 处理
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'API端点不存在' });
+  } else {
+    res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Solara Music Server running on port ${PORT}`);
   console.log(`默认密码: ${AUTH_PASSWORD}`);
+  console.log(`Session Keys: ${sessionKeys.length} keys configured`);
+  console.log(`健康检查: http://localhost:${PORT}/api/health`);
   console.log(`登录页面: http://localhost:${PORT}/login.html`);
   console.log(`主页面: http://localhost:${PORT}/`);
-  console.log(`使用 GD 音乐台 API`);
-  console.log(`Session 存储: cookie-session (客户端存储)`);
 });
