@@ -65,49 +65,29 @@ const dom = {
 const SEARCH_PAGE_SIZE = 100; // 每页搜索结果数量，增加到100条
 const MAX_RADAR_OFFSET = 200; // 最大雷达偏移量，对应2页结果（2×100=200条）
 const MAX_SEARCH_PAGES = 2; // 最大搜索页数
-// 新增速度检测配置
-const SPEED_TEST_TIMEOUT = 3000; // 单个源速度检测超时时间（3秒）
-const SPEED_TEST_SOURCES = ["qq", "kuwo", "netease"]; // 参与速度检测的音源顺序
-// 新增预加载配置常量
-const PRELOAD_BUFFER_TIME = 20; // 提前2    0秒预加载下一首
-const PRELOAD_MAX_RETRIES = 2; // 预加载最大重试次数    
 
-// 更新音质等级配置以匹配 fish-music
+// 在文件开头的常量定义部分添加音质等级配置
 const QUALITY_LEVELS = [
-    { value: "flac", label: "无损音质", description: "FLAC", level: 4 },
+    { value: "999", label: "无损音质", description: "FLAC", level: 4 },
     { value: "320", label: "极高音质", description: "320 kbps", level: 3 },
-    { value: "192", label: "高音质", description: "192 kbps", level: 2 },
+    { value: "192", label: "高品音质", description: "192 kbps", level: 2 },
     { value: "128", label: "标准音质", description: "128 kbps", level: 1 }
 ];
 
-
 // 在文件开头的常量定义部分添加屏蔽关键词配置
 const BLOCKED_KEYWORDS = [
-    // 翻唱和重混版本
-    "Cover", "cover", "翻唱", "Cover:", "cover:",
-    "Remix", "remix", "混音", "Remix:", "remix:",
-    "Live", "live", "现场", "演唱会", "Live:", "live:",
+    "Cover", "cover", "COVER", "翻唱", "Cover:", "cover:", "COVER:",
+    "Remix", "remix", "REMIX", "混音", "Remix:", "remix:", "REMIX:",
+    "Live", "live", "LIVE", "现场", "演唱会", "Live:", "live:", "LIVE:",
+    "合集", "精选", "串烧", "DJ", "dj", "D.J.",
+    "播客", "Podcast", "podcast", "PODCAST",
     "伴奏", "纯音乐", "Instrumental", "instrumental",
-    "Demo", "demo", "试听", "原唱", "翻奏", "非原唱", "不是原唱",
-    "伴奏版", "纯音乐版", "现场版", "演唱会版",
-    
-    // 合集和编辑内容
-    "合集", "精选", "串烧", "DJ版", "dj版", "D.J.",
-    "自制", "铃声", "手机铃声", "网友自制", "剪辑版",
-    "片段", "剪辑", "剪切", "精选集", "合辑",
-    
-    // 播客和非音乐内容
-    "播客", "Podcast", "podcast", "PODCAST", "广播",
-    "故事会", "儿童故事", "童话", "儿歌", "童谣", "睡前故事",
-    "有声书", "有声小说", "广播剧", "相声", "小品", "评书",
-    "新闻", "财经", "体育", "搞笑", "段子", "脱口秀",
-    "教学", "教程", "练习", "课程", "学习",
-    
-    // 其他非音乐内容
-    "车载", "电音", "抖音", "快手", "BGM", "背景音乐",
-    "游戏音乐", "影视原声", "配乐", "音效",
-    "ASMR", "白噪音", "冥想", "放松音乐",
-    "胎教音乐", "疗愈音乐", "治愈音乐"
+    "Demo", "demo", "DEMO", "试听", "原唱", "翻奏",
+    "自制", "铃声", "手机铃声", "网友自制",
+    "教学", "教程", "练习",
+    "片段", "剪辑", "剪切",
+    "非原唱", "不是原唱",
+    "伴奏版", "纯音乐版"
 ];
 // 在 state 对象之前添加
 let mobilePanelState = {
@@ -123,87 +103,6 @@ const mobileBridge = window.SolaraMobileBridge || {};
 mobileBridge.handlers = mobileBridge.handlers || {};
 mobileBridge.queue = Array.isArray(mobileBridge.queue) ? mobileBridge.queue : [];
 window.SolaraMobileBridge = mobileBridge;
-
-// 新增音源速度检测函数
-async function testSourceSpeed(song, quality, source) {
-    return new Promise((resolve) => {
-        const startTime = Date.now();
-        let timeoutId = null;
-        
-        const audioUrl = API.getSongUrl({...song, source}, quality);
-        
-        // 创建测试用的音频元素
-        const testAudio = new Audio();
-        testAudio.preload = 'auto';
-        
-        const cleanup = () => {
-            if (timeoutId) clearTimeout(timeoutId);
-            testAudio.removeEventListener('loadeddata', onLoaded);
-            testAudio.removeEventListener('error', onError);
-            testAudio.src = '';
-            testAudio.load();
-        };
-        
-        const onLoaded = () => {
-            cleanup();
-            const loadTime = Date.now() - startTime;
-            debugLog(`音源速度检测: ${source} 加载成功, 耗时: ${loadTime}ms`);
-            resolve({ source, loadTime, success: true, url: testAudio.src });
-        };
-        
-        const onError = () => {
-            cleanup();
-            debugLog(`音源速度检测: ${source} 加载失败`);
-            resolve({ source, loadTime: Infinity, success: false, url: null });
-        };
-        
-        timeoutId = setTimeout(() => {
-            cleanup();
-            debugLog(`音源速度检测: ${source} 超时`);
-            resolve({ source, loadTime: Infinity, success: false, url: null });
-        }, SPEED_TEST_TIMEOUT);
-        
-        testAudio.addEventListener('loadeddata', onLoaded, { once: true });
-        testAudio.addEventListener('error', onError, { once: true });
-        
-        // 开始测试
-        testAudio.src = audioUrl;
-        testAudio.load();
-    });
-}
-
-// 新增：查找最快可用音源
-async function findFastestSource(song, quality) {
-    debugLog(`开始查找最快音源: ${song.name}, 音质: ${quality}`);
-    
-    const speedTests = [];
-    
-    // 对每个音源进行速度测试
-    for (const source of SPEED_TEST_SOURCES) {
-        const result = await testSourceSpeed(song, quality, source);
-        speedTests.push(result);
-        
-        // 如果已经有成功的且速度很快（小于1秒），可以提前返回
-        if (result.success && result.loadTime < 1000) {
-            debugLog(`找到快速音源: ${result.source}, 耗时: ${result.loadTime}ms`);
-            return result;
-        }
-    }
-    
-    // 过滤成功的测试结果并按速度排序
-    const successfulTests = speedTests.filter(test => test.success);
-    if (successfulTests.length === 0) {
-        debugLog("所有音源速度检测均失败");
-        return null;
-    }
-    
-    // 按加载时间排序，选择最快的
-    successfulTests.sort((a, b) => a.loadTime - b.loadTime);
-    const fastest = successfulTests[0];
-    
-    debugLog(`最快音源: ${fastest.source}, 耗时: ${fastest.loadTime}ms`);
-    return fastest;
-}
 
 function invokeMobileHook(name, ...args) {
     if (!isMobileView) {
@@ -312,6 +211,7 @@ function toggleMobileSearch() {
     return invokeMobileHook("toggleSearch");
 }
 
+// 完全替换这两个函数
 function openMobilePanel(view = "playlist") {
     debugLog(`请求打开移动端面板: ${view}, 当前状态: ${mobilePanelState.isOpen ? '打开' : '关闭'}`);
     // 如果已经打开同一个视图，则关闭
@@ -609,49 +509,44 @@ function buildAudioProxyUrl(url) {
 }
 
 const SOURCE_OPTIONS = [
-    { value: "netease", label: "网易云音乐" },
     { value: "kuwo", label: "酷我音乐" },
-    { value: "qq", label: "QQ音乐" },
+    { value: "netease", label: "网易云音乐" },
+    { value: "joox", label: "JOOX音乐" }
 ];
 
 // 备选关键词列表
 const RADAR_KEYWORDS = [
-    // 歌曲风格 - 国外起源用英文，国内起源保留中文
-    "Pop", "Rock", "Folk", "Electronic", "Hip Hop", "R&B", "Jazz", "Blues",
-    "Rock & Roll", "Hard Core", "Smooth Jazz", "Funk", "Soul", "Soundtrack", 
-    "Anime Music", "Country", "Reggae", "Bossa Nova", "Latin", "Jazz Rock", 
-    "Post-Rock", "Indie", "Metal", "Punk Rock", "Progressive Rock", "Punk", 
-    "Industrial Rock", "Trap", "Future Bass", "Dubstep", "Techno", "House", 
-    "Progressive House", "Trance", "Ambient", "New Wave", "Synthwave", 
-    "Post-Punk", "Gothic", "Folk Rock", "Hardstyle", "J-Pop", "K-Pop",
-    "Reggaeton", "Tropical House", "Chillwave", "Vaporwave", "Lo-fi Hip Hop", 
-    "Disco", "Psychedelic", "Noise Rock", "Tech House", "Deep House", 
-    "Garage Rock", "Bluegrass", "Glam Rock", "Baroque Pop", "Alternative Rock",
-    "Classical", "Light Music", "New Age",
-    // 中国特有音乐风格保留中文
-    "民谣", "古风", "中国风", "粤语", "日语", "西班牙语",
+    // 歌曲风格
+    "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "蓝调",
+    "轻音乐", "流行摇滚", "独立音乐", "民谣摇滚", "电子舞曲",
+    "轻爵士", "Funk", "Soul Music", "新世纪音乐", "电影原声", "动漫音乐",
+    "乡村", "雷鬼", "世界音乐", "舞曲", "Bossa Nova", "流行R&B",
+    "嘻哈", "拉丁", "古典流行", "氛围音乐", "钢琴流行", "爵士摇滚",
+    "灵魂R&B", "电子流行", "独立流行", "另类摇滚", "后摇滚",
 
     // 国内热门歌手
-    "周杰伦", "邓紫棋", "林俊杰", "薛之谦", "毛不易", "陈奕迅", "李荣浩",
-    "张杰", "周深", "王力宏", "五月天", "蔡依林", "张韶涵", "王心凌",
-    "张靓颖", "田馥甄", "李健", "赵雷", "任贤齐", "张信哲", "张惠妹",
-    "刘德华", "张学友", "周华健", "费玉清", "容祖儿", "莫文蔚",
-    "潘玮柏", "刀郎", "腾格尔", "李玉刚", "易烊千玺", "米津玄师",
+    "周杰伦", "邓紫棋", "李健", "毛不易", "薛之谦", "张韶涵", "王心凌",
+    "赵雷", "张含韵", "SHE", "林俊杰", "蔡依林", "王力宏", "五月天",
+    "张靓颖", "李荣浩", "田馥甄", "林宥嘉", "张杰", "周深", "任贤齐",
+    "张信哲", "费玉清", "张惠妹", "黄子韬", "刀郎", "腾格尔",
+    "陈奕迅", "容祖儿", "李宇春", "李玉刚", "米津玄师", "易烊千玺",
+    "周华健", "刘德华", "张学友", "陈慧娴", "林志炫", "莫文蔚", "潘玮柏",
 
     // 国际热门歌手
     "Taylor Swift", "Ed Sheeran", "Adele", "Beyoncé", "Justin Bieber",
-    "Billie Eilish", "Bruno Mars", "Ariana Grande", "The Weeknd", "Coldplay",
-    "Maroon 5", "Lady Gaga", "Rihanna", "Drake", "Post Malone", "Imagine Dragons",
-    "Dua Lipa", "Shawn Mendes", "Harry Styles", "Sam Smith", "Selena Gomez",
-    "Katy Perry", "Nicki Minaj", "Camila Cabello", "Halsey", "Charlie Puth",
-    "Shakira", "P!nk", "Sia", "Avicii", "Calvin Harris", "David Guetta", "Zedd",
-    "Martin Garrix", "Kygo", "Marshmello", "Alan Walker", "Linkin Park", 
-    "Green Day", "Red Hot Chili Peppers", "Foo Fighters", "Queen", "The Beatles",
-    "Michael Jackson", "Elton John", "Madonna", "Whitney Houston", "Celine Dion",
-    "BTS", "BLACKPINK", "EXO", "TWICE", "BIGBANG", "SEVENTEEN", "NCT", 
-    "Stray Kids", "Red Velvet", "MONSTA X", "Aespa"
+    "Billie Eilish", "Bruno Mars", "Ariana Grande", "Shawn Mendes",
+    "Dua Lipa", "Coldplay", "Maroon 5", "The Weeknd", "Lady Gaga",
+    "Rihanna", "Kanye West", "Drake", "Post Malone", "Imagine Dragons",
+    "Alicia Keys", "Sam Smith", "Selena Gomez", "Harry Styles",
+    "One Direction", "Katy Perry", "Nicki Minaj", "Camila Cabello",
+    "Halsey", "Charlie Puth", "Shakira", "P!nk", "Sia", "Avicii",
+    "Calvin Harris", "David Guetta", "Zedd", "Martin Garrix", "Kygo",
+    "Marshmello", "Alan Walker", "Coldplay", "Linkin Park", "Green Day",
+    "Red Hot Chili Peppers", "Foo Fighters", "Queen", "The Beatles",
+    "Michael Jackson", "Elton John", "Madonna", "Whitney Houston",
+    "Celine Dion", "BTS", "BLACKPINK", "EXO", "TWICE", "BIGBANG", "SEVENTEEN",
+    "NCT", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa"
 ];
-
 
 
 function normalizeSource(value) {
@@ -668,11 +563,116 @@ function getCurrentQualityLevel() {
     return QUALITY_LEVELS.find(q => q.value === currentQuality) || QUALITY_LEVELS[2]; // 默认返回极高音质
 }
 
-
 function getNextLowerQuality(currentQuality) {
     const currentLevel = QUALITY_LEVELS.find(q => q.value === currentQuality)?.level || 3;
     const nextQuality = QUALITY_LEVELS.find(q => q.level === currentLevel - 1);
     return nextQuality ? nextQuality.value : null;
+}
+
+// 新增：获取下一个备选音源
+function getNextSource(currentSource) {
+    const sources = SOURCE_OPTIONS.map(opt => opt.value);
+    const currentIndex = sources.indexOf(currentSource);
+    const nextIndex = (currentIndex + 1) % sources.length;
+    return sources[nextIndex];
+}
+
+// 新增：通过搜索获取相同歌曲在不同音源的信息
+async function findSongInOtherSource(song, targetSource) {
+    try {
+        const searchKeyword = `${song.name} ${Array.isArray(song.artist) ? song.artist.join(' ') : song.artist}`;
+        debugLog(`在音源 ${targetSource} 中搜索歌曲: ${searchKeyword}`);
+        
+        const results = await API.search(searchKeyword, targetSource, 10, 1);
+        
+        if (results && results.length > 0) {
+            // 尝试找到最匹配的歌曲
+            const matchedSong = results.find(item => 
+                item.name.toLowerCase().includes(song.name.toLowerCase()) ||
+                song.name.toLowerCase().includes(item.name.toLowerCase())
+            ) || results[0];
+            
+            debugLog(`在音源 ${targetSource} 中找到歌曲: ${matchedSong.name}`);
+            return {
+                ...matchedSong,
+                originalName: song.name,
+                originalArtist: song.artist
+            };
+        }
+    } catch (error) {
+        console.warn(`在音源 ${targetSource} 中搜索歌曲失败:`, error);
+    }
+    
+    return null;
+}
+
+// 新增：音源切换处理
+async function handleSourceSwitch(song, error) {
+    state.sourceRetryCount = (state.sourceRetryCount || 0) + 1;
+    const currentSource = state.currentSourceAttempt || state.searchSource;
+    const nextSource = getNextSource(currentSource);
+    
+    debugLog(`尝试切换音源: ${currentSource} -> ${nextSource}, 音源重试次数=${state.sourceRetryCount}`);
+
+    // 如果超过最大音源重试次数，切换到下一首
+    if (state.sourceRetryCount > state.maxSourceRetries) {
+        debugLog(`达到音源最大重试次数，切换到下一首歌曲`);
+        showNotification(`所有音源均无法播放 ${song.name}，自动切换下一首`, 'error');
+        resetQualityState();
+        resetSourceState();
+        
+        // 切换到下一首前，先更新歌曲信息
+        const nextSong = getNextSong();
+        if (nextSong) {
+            state.currentSong = nextSong;
+            updateCurrentSongInfo(nextSong, { loadArtwork: true });
+        }
+        
+        playNext();
+        return;
+    }
+
+    // 尝试在下一个音源中查找相同歌曲
+    try {
+        showNotification(`正在尝试从${SOURCE_OPTIONS.find(s => s.value === nextSource)?.label}播放...`, 'info');
+        
+        const newSong = await findSongInOtherSource(song, nextSource);
+        
+        if (newSong) {
+            state.currentSourceAttempt = nextSource;
+            state.qualityRetryCount = 0; // 重置音质重试计数
+            state.currentQualityAttempt = state.playbackQuality; // 重置为默认音质
+            
+            debugLog(`找到替代音源歌曲，使用音源: ${nextSource}`);
+            showNotification(`已切换到${SOURCE_OPTIONS.find(s => s.value === nextSource)?.label}音源`, 'success');
+            
+            // 使用新音源的歌曲信息播放
+            setTimeout(() => {
+                playSong(newSong, {
+                    autoplay: true,
+                    startTime: state.currentPlaybackTime,
+                    preserveProgress: true,
+                    isRetry: true
+                });
+            }, 500);
+        } else {
+            // 没有找到相同歌曲，继续尝试下一个音源
+            debugLog(`在音源 ${nextSource} 中未找到相同歌曲，继续尝试下一个音源`);
+            state.currentSourceAttempt = nextSource;
+            handleSourceSwitch(song, error);
+        }
+    } catch (sourceError) {
+        console.error('音源切换失败:', sourceError);
+        // 音源搜索失败，继续尝试下一个音源
+        state.currentSourceAttempt = nextSource;
+        handleSourceSwitch(song, error);
+    }
+}
+
+// 新增：重置音源状态
+function resetSourceState() {
+    state.currentSourceAttempt = state.searchSource;
+    state.sourceRetryCount = 0;
 }
 
 function getLowestQuality() {
@@ -686,175 +686,168 @@ function resetQualityState() {
     state.playbackStuckCount = 0;
     state.isPlaybackStuck = false;
     state.isWaitingForPlayback = false;
+    resetSourceState(); // 同时重置音源状态
     stopPlaybackMonitoring();
     stopLoadTimeoutMonitoring();
-    debugLog(`音质状态重置: 当前尝试音质=${state.currentQualityAttempt}, 重试次数=${state.qualityRetryCount}`);
+    debugLog(`音质状态重置: 当前尝试音质=${state.currentQualityAttempt}, 重试次数=${state.qualityRetryCount}, 当前音源=${state.currentSourceAttempt}`);
 }
 
-// 修改后的 handlePlaybackError 函数
-function handlePlaybackError(song, error) {
-    stopPlaybackMonitoring();
-    stopLoadTimeoutMonitoring();
-    
-    state.qualityRetryCount++;
-    debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}, 错误信息=${error.message}`);
+// 修改 playSong 函数，添加音质自动切换逻辑
+async function playSong(song, options = {}) {
+    const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
 
-    // 添加网络状态检查
-    if (!navigator.onLine) {
-        debugLog('网络连接已断开，停止重试');
-        showNotification('网络连接已断开，请检查网络后重试', 'error');
+    // 如果不是重试，重置音质状态
+    if (!isRetry) {
         resetQualityState();
-        return;
     }
 
-    // 检查是否是 fish-music 特定的错误
-    if (error.message.includes('Fish-music error') || error.message.includes('内部服务器错误')) {
-        debugLog('检测到 fish-music 服务错误，尝试使用 GD 音乐台');
-        showNotification('音源服务暂时不可用，尝试备用方案', 'warning');
-        
-        // 立即切换到 GD 音乐台
-        setTimeout(() => {
-            playWithGDMusicFallback(song);
-        }, 1000);
-        return;
-    }
+    window.clearTimeout(pendingPaletteTimer);
+    state.audioReadyForPalette = false;
+    state.pendingPaletteData = null;
+    state.pendingPaletteImage = null;
+    state.pendingPaletteImmediate = false;
+    state.pendingPaletteReady = false;
 
-    // 如果超过最大重试次数，切换到下一首
-    if (state.qualityRetryCount >= state.maxQualityRetries) {
-        debugLog(`达到最大重试次数，切换到下一首歌曲`);
-        showNotification(`无法播放 ${song.name}，自动切换下一首`, 'warning');
-        resetQualityState();
-        
-        // 切换到下一首前，先更新歌曲信息
-        const nextSong = getNextSong();
-        if (nextSong) {
-            state.currentSong = nextSong;
-            updateCurrentSongInfo(nextSong, { loadArtwork: true });
-        }
-        
-        playNext();
-        return;
-    }
-
-    // 添加延迟重试，避免过于频繁
-    setTimeout(() => {
-        // 优先尝试切换音源
-        trySwitchSourceDueToError(song);
-    }, 1000);
-}
-
-// 新增：使用 GD 音乐台回退播放
-async function playWithGDMusicFallback(song) {
-    debugLog(`尝试使用 GD 音乐台回退播放: ${song.name}`);
-    
     try {
-        // 重置音质状态
-        resetQualityState();
-        
-        // 使用 GD 音乐台直接播放
-        const wasPlaying = !dom.audioPlayer.paused;
-        const targetTime = dom.audioPlayer.currentTime || state.currentPlaybackTime || 0;
-        
-        // 停止当前播放
-        dom.audioPlayer.pause();
-        dom.audioPlayer.src = '';
-        
-        // 使用 GD 音乐台获取音频 URL
-        const signature = API.generateSignature();
-        const audioUrl = `${API.baseUrl}?types=url&id=${song.id}&source=${song.source}&quality=${state.currentQualityAttempt}&s=${signature}&fallback=true`;
-        
-        debugLog(`GD 音乐台回退 URL: ${audioUrl}`);
-        
+        updateCurrentSongInfo(song, { loadArtwork: false });
+
+        const currentQuality = state.currentQualityAttempt;
+        const audioUrl = API.getSongUrl(song, currentQuality);
+        debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 重试次数: ${state.qualityRetryCount}`);
+
         const audioData = await API.fetchJson(audioUrl);
-        
+
         if (!audioData || !audioData.url) {
-            throw new Error('GD 音乐台也无法获取音频地址');
+            throw new Error('无法获取音频播放地址');
         }
-        
+
         const originalAudioUrl = audioData.url;
         const proxiedAudioUrl = buildAudioProxyUrl(originalAudioUrl);
         const preferredAudioUrl = preferHttpsUrl(originalAudioUrl);
         const candidateAudioUrls = Array.from(
             new Set([proxiedAudioUrl, preferredAudioUrl, originalAudioUrl].filter(Boolean))
         );
-        
+
         const primaryAudioUrl = candidateAudioUrls[0] || originalAudioUrl;
-        
+
+        if (proxiedAudioUrl && proxiedAudioUrl !== originalAudioUrl) {
+            debugLog(`音频地址已通过代理转换为 HTTPS: ${proxiedAudioUrl}`);
+        } else if (preferredAudioUrl && preferredAudioUrl !== originalAudioUrl) {
+            debugLog(`音频地址由 HTTP 升级为 HTTPS: ${preferredAudioUrl}`);
+        }
+
         state.currentSong = song;
         state.currentAudioUrl = null;
-        
-        dom.audioPlayer.src = primaryAudioUrl;
-        dom.audioPlayer.load();
-        
-        await waitForAudioReady(dom.audioPlayer);
-        
-        state.currentAudioUrl = primaryAudioUrl;
-        
-        if (targetTime > 0) {
-            setAudioCurrentTime(targetTime);
+
+        dom.audioPlayer.pause();
+
+        if (!preserveProgress) {
+            state.currentPlaybackTime = 0;
+            state.lastSavedPlaybackTime = 0;
+            safeSetLocalStorage('currentPlaybackTime', '0');
+        } else if (startTime > 0) {
+            state.currentPlaybackTime = startTime;
+            state.lastSavedPlaybackTime = startTime;
         }
-        
-        if (wasPlaying) {
-            const playPromise = dom.audioPlayer.play();
+
+        state.pendingSeekTime = startTime > 0 ? startTime : null;
+
+        let selectedAudioUrl = null;
+        let lastAudioError = null;
+        let usedFallbackAudio = false;
+
+        for (const candidateUrl of candidateAudioUrls) {
+            dom.audioPlayer.src = candidateUrl;
+            dom.audioPlayer.load();
+
+            try {
+                await waitForAudioReady(dom.audioPlayer);
+                selectedAudioUrl = candidateUrl;
+                usedFallbackAudio = candidateUrl !== primaryAudioUrl && candidateAudioUrls.length > 1;
+                break;
+            } catch (error) {
+                lastAudioError = error;
+                console.warn('音频元数据加载异常', error);
+
+                if (candidateUrl === primaryAudioUrl && candidateAudioUrls.length > 1) {
+                    debugLog('主音频地址加载失败，尝试使用备用地址');
+                }
+            }
+        }
+
+        if (!selectedAudioUrl) {
+            throw lastAudioError || new Error('音频加载失败');
+        }
+
+        if (usedFallbackAudio) {
+            debugLog(`已回退至备用音频地址: ${selectedAudioUrl}`);
+            showNotification('主音频加载失败，已切换到备用音源', 'warning');
+        }
+
+        state.currentAudioUrl = selectedAudioUrl;
+
+        if (state.pendingSeekTime != null) {
+            setAudioCurrentTime(state.pendingSeekTime);
+            state.pendingSeekTime = null;
+        } else {
+            setAudioCurrentTime(dom.audioPlayer.currentTime || 0);
+        }
+
+        state.lastSavedPlaybackTime = state.currentPlaybackTime;
+
+        let playPromise = null;
+
+        if (autoplay) {
+            playPromise = dom.audioPlayer.play();
             if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    stopLoadTimeoutMonitoring();
-                    startPlaybackMonitoring();
-                }).catch(error => {
-                    console.error('GD 音乐台播放失败:', error);
+                playPromise.catch(error => {
+                    console.error('播放失败:', error);
                     handlePlaybackError(song, error);
                 });
+            } else {
+                playPromise = null;
             }
         } else {
             dom.audioPlayer.pause();
             updatePlayPauseButton();
         }
+
+        scheduleDeferredSongAssets(song, playPromise);
+
+        debugLog(`开始播放: ${song.name} @${currentQuality}`);
         
-        showNotification(`使用备用音源播放: ${song.name}`, 'info');
-        debugLog(`GD 音乐台回退播放成功: ${song.name}`);
-        
-    } catch (error) {
-        console.error('GD 音乐台回退播放失败:', error);
-        // 如果 GD 音乐台也失败，切换到下一首
-        showNotification('所有音源均不可用，切换到下一首', 'error');
-        resetQualityState();
-        playNext();
-    }
-}
-// 新增函数：因播放错误尝试切换音源
-async function trySwitchSourceDueToError(song) {
-    debugLog(`播放错误，尝试在所有音源中查找最快可用音源`);
-    showNotification(`正在查找最快音源...`, 'warning');
-    
-    try {
-        // 使用相同音质在所有音源中查找最快可用源
-        const fastestSource = await findFastestSource(song, state.currentQualityAttempt);
-        
-        if (fastestSource && fastestSource.success) {
-            debugLog(`找到最快可用音源: ${fastestSource.source}`);
-            showNotification(`切换到 ${getSourceLabel(fastestSource.source)} 音源`, 'info');
-            
-            // 使用找到的音源重新播放
-            const sourceSong = { ...song, source: fastestSource.source };
-            await playSong(sourceSong, {
-                autoplay: true,
-                startTime: state.currentPlaybackTime,
-                preserveProgress: true,
-                isRetry: true
-            });
-        } else {
-            // 所有音源在当前音质下都失败，尝试降低音质
-            debugLog(`所有音源在当前音质下均失败，尝试降低音质`);
-            tryLowerQuality(song);
+        // 显示当前使用的音质
+        const qualityInfo = QUALITY_LEVELS.find(q => q.value === currentQuality);
+        if (qualityInfo && !isRetry) {
+            showNotification(`正在播放: ${song.name} (${qualityInfo.label})`);
+        }
+
+        if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
+            window.__SOLARA_UPDATE_MEDIA_METADATA();
         }
     } catch (error) {
-        console.warn('查找最快音源失败:', error);
-        tryLowerQuality(song);
+        console.error('播放歌曲失败:', error);
+        handlePlaybackError(song, error);
+    } finally {
+        savePlayerState();
     }
 }
 
-// 新增辅助函数：尝试降低音质
-function tryLowerQuality(song) {
+function handlePlaybackError(song, error) {
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
+    
+    state.qualityRetryCount++;
+    debugLog(`播放错误处理: 重试次数=${state.qualityRetryCount}, 当前音质=${state.currentQualityAttempt}, 当前音源=${state.currentSourceAttempt}`);
+
+    // 如果超过最大重试次数，尝试切换音源
+    if (state.qualityRetryCount >= state.maxQualityRetries) {
+        debugLog(`达到音质最大重试次数，尝试切换音源`);
+        handleSourceSwitch(song, error);
+        return;
+    }
+
+    // 尝试下一个较低音质
     const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
     if (nextQuality) {
         state.currentQualityAttempt = nextQuality;
@@ -872,22 +865,11 @@ function tryLowerQuality(song) {
             });
         }, 500);
     } else {
-        // 没有更低的音质可用，切换到下一首
-        debugLog(`无更低音质可用，切换到下一首歌曲`);
-        showNotification(`所有音质均无法播放 ${song.name}，自动切换下一首`, 'error');
-        resetQualityState();
-        
-        // 切换到下一首前，先更新歌曲信息
-        const nextSong = getNextSong();
-        if (nextSong) {
-            state.currentSong = nextSong;
-            updateCurrentSongInfo(nextSong, { loadArtwork: true });
-        }
-        
-        playNext();
+        // 没有更低的音质可用，尝试切换音源
+        debugLog(`无更低音质可用，尝试切换音源`);
+        handleSourceSwitch(song, error);
     }
 }
-
 
 // 新增辅助函数：获取下一首歌曲
 function getNextSong() {
@@ -912,29 +894,7 @@ function getNextSong() {
 
     return playlist[nextIndex] || null;
 }
-// 新增：获取下一首歌曲信息（避免与预加载中的 getNextSong 冲突）
-function getNextSongInfo() {
-    let playlist = [];
-    let nextIndex = -1;
 
-    if (state.currentPlaylist === "playlist") {
-        playlist = state.playlistSongs;
-    } else if (state.currentPlaylist === "online") {
-        playlist = state.onlineSongs;
-    } else if (state.currentPlaylist === "search") {
-        playlist = state.searchResults;
-    }
-
-    if (playlist.length === 0) return null;
-
-    if (state.playMode === "random") {
-        nextIndex = Math.floor(Math.random() * playlist.length);
-    } else {
-        nextIndex = (state.currentTrackIndex + 1) % playlist.length;
-    }
-
-    return playlist[nextIndex] || null;
-}
 function normalizeQuality(value) {
     const match = QUALITY_LEVELS.find(option => option.value === value);
     return match ? match.value : "320";
@@ -993,11 +953,9 @@ const savedCurrentPlaylist = (() => {
     return playlists.includes(stored) ? stored : "playlist";
 })();
 
-// API配置 - 使用 fish-music 音源
-// API配置 - 使用 fish-music 音源
+// API配置 - 修复API地址和请求方式
 const API = {
     baseUrl: "/proxy",
-    apiKey: "",
 
     generateSignature: () => {
         return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -1028,9 +986,9 @@ const API = {
         }
     },
 
-    // 搜索接口 - 使用 GD 音乐台
     search: async (keyword, source = "kuwo", count = SEARCH_PAGE_SIZE, page = 1) => {
         const signature = API.generateSignature();
+        // 修改：使用动态页面大小
         const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
 
         try {
@@ -1056,35 +1014,106 @@ const API = {
         }
     },
 
-    // 获取歌曲URL - 支持 fish-music 和回退到 GD
-    getSongUrl: (song, quality = "320") => {
+    
+
+    
+    search: async (keyword, source = "kuwo", count = 50, page = 1) => {
         const signature = API.generateSignature();
-        // 映射音质到 fish-music 格式
-        const qualityMap = {
-            "128": "128k",
-            "192": "192k", 
-            "320": "320k",
-            "flac": "flac",
-            "flac24bit": "flac24bit"
-        };
-        const fishQuality = qualityMap[quality] || "320k";
-        
-        // 使用 fish-music URL 格式，不添加回退参数（由代理层处理）
-        return `${API.baseUrl}?types=url&id=${song.id}&source=${song.source || "netease"}&quality=${fishQuality}&s=${signature}`;
+        const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
+
+        try {
+            debugLog(`API请求: ${url}`);
+            const data = await API.fetchJson(url);
+            debugLog(`API响应: ${JSON.stringify(data).substring(0, 200)}...`);
+
+            if (!Array.isArray(data)) throw new Error("搜索结果格式错误");
+
+            return data.map(song => ({
+                id: song.id,
+                name: song.name,
+                artist: song.artist,
+                album: song.album,
+                pic_id: song.pic_id,
+                url_id: song.url_id,
+                lyric_id: song.lyric_id,
+                source: song.source,
+            }));
+        } catch (error) {
+            debugLog(`API错误: ${error.message}`);
+            throw error;
+        }
     },
 
-    // 获取歌词 - 适配 fish-music 格式
+    getRadarPlaylist: async (playlistId = "3778678", options = {}) => {
+        const signature = API.generateSignature();
+
+        let limit = 50;
+        let offset = 0;
+
+        if (typeof options === "number") {
+            limit = options;
+        } else if (options && typeof options === "object") {
+            if (Number.isFinite(options.limit)) {
+                limit = options.limit;
+            } else if (Number.isFinite(options.count)) {
+                limit = options.count;
+            }
+            if (Number.isFinite(options.offset)) {
+                offset = options.offset;
+            }
+        }
+
+        limit = Math.max(1, Math.min(200, Math.trunc(limit)) || 50);
+        offset = Math.max(0, Math.trunc(offset) || 0);
+
+        const params = new URLSearchParams({
+            types: "playlist",
+            id: playlistId,
+            limit: String(limit),
+            offset: String(offset),
+            s: signature,
+        });
+        const url = `${API.baseUrl}?${params.toString()}`;
+
+        try {
+            const data = await API.fetchJson(url);
+            const tracks = data && data.playlist && Array.isArray(data.playlist.tracks)
+                ? data.playlist.tracks.slice(0, limit)
+                : [];
+
+            if (tracks.length === 0) throw new Error("No tracks found");
+
+            return tracks.map(track => ({
+                id: track.id,
+                name: track.name,
+                artist: Array.isArray(track.ar) ? track.ar.map(artist => artist.name).join(" / ") : "",
+                source: "netease",
+                lyric_id: track.id,
+                pic_id: track.al?.pic_str || track.al?.pic || track.al?.picUrl || "",
+            }));
+        } catch (error) {
+            console.error("API request failed:", error);
+            throw error;
+        }
+    },
+
+    getSongUrl: (song, quality = "320") => {
+        const signature = API.generateSignature();
+        return `${API.baseUrl}?types=url&id=${song.id}&source=${song.source || "netease"}&br=${quality}&s=${signature}`;
+    },
+
     getLyric: (song) => {
         const signature = API.generateSignature();
         return `${API.baseUrl}?types=lyric&id=${song.lyric_id || song.id}&source=${song.source || "netease"}&s=${signature}`;
     },
 
-    // 获取封面 - 始终使用 GD 音乐台
     getPicUrl: (song) => {
         const signature = API.generateSignature();
-        return `${API.baseUrl}?types=pic&id=${song.pic_id}&source=${song.source || "netease"}&s=${signature}`;
-    },
+        return `${API.baseUrl}?types=pic&id=${song.pic_id}&source=${song.source || "netease"}&size=300&s=${signature}`;
+    }
 };
+
+Object.freeze(API);
 
 // 新增：歌曲过滤函数
 function filterBlockedSongs(songs) {
@@ -1162,9 +1191,10 @@ const state = {
     isMobileInlineLyricsOpen: false,
     selectedSearchResults: new Set(),
     radarOffset: savedRadarOffset, // 新增：雷达探索偏移量
+    playbackQuality: savedPlaybackQuality,
     currentQualityAttempt: savedPlaybackQuality, // 当前尝试的音质
     qualityRetryCount: 0, // 音质重试次数
-    maxQualityRetries: 2, // 最大重试次数
+    maxQualityRetries: 3, // 最大重试次数
     isAutoQualitySwitching: false, // 是否正在自动切换音质
     playbackStuckTimer: null, // 播放卡住检测定时器
     lastPlaybackTime: 0, // 上次播放时间
@@ -1173,13 +1203,11 @@ const state = {
     isPlaybackStuck: false, // 是否播放卡住
     loadTimeoutTimer: null, // 加载超时定时器
     loadStartTime: 0, // 开始加载的时间戳
-    maxLoadTime: 3000, // 最大加载时间（5秒）
+    maxLoadTime: 10000, // 最大加载时间（10秒）
     isWaitingForPlayback: false, // 是否在等待播放开始
-    preloadNextSongTimer: null, // 预加载定时器
-    preloadedNextAudio: null, // 预加载的音频元素
-    preloadedNextSong: null, // 预加载的歌曲信息
-    preloadRetryCount: 0, // 预加载重试次数
-    isPreloading: false, // 是否正在预加载
+    currentSourceAttempt: savedSearchSource, // 当前尝试的音源
+    sourceRetryCount: 0, // 音源重试次数
+    maxSourceRetries: SOURCE_OPTIONS.length - 1, // 最大音源重试次数
 };
 
 // ==== Media Session integration (Safari/iOS Lock Screen) ====
@@ -1432,9 +1460,65 @@ const state = {
     triggerMediaSessionMetadataRefresh();
 })();
 
-// 应用初始化
-function initializeApp() {
-    console.log('开始应用初始化...');
+// 认证状态检查
+// 认证状态检查 - 修复版本
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/auth-status', {
+            credentials: 'include'  // 重要：包含 cookies
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.authenticated) {
+            console.log('用户未认证，跳转到登录页面');
+            window.location.href = '/login.html';
+            return false;
+        }
+        
+        console.log('用户已认证，继续加载应用');
+        return true;
+    } catch (error) {
+        console.error('认证检查失败:', error);
+        window.location.href = '/login.html';
+        return false;
+    }
+}
+
+// 退出登录功能
+function setupLogout() {
+    // 添加一个退出按钮到界面，或者使用键盘快捷键
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Shift+L 退出登录
+        if (e.ctrlKey && e.shiftKey && e.key === 'L') {
+            if (confirm('确定要退出登录吗？')) {
+                fetch('/api/logout', { 
+                    method: 'POST',
+                    credentials: 'include'
+                }).then(() => {
+                    window.location.href = '/login.html';
+                });
+            }
+        }
+    });
+}
+
+// 在应用初始化前检查认证
+async function initializeApp() {
+    console.log('开始应用初始化，检查认证状态...');
+    
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) {
+        console.log('认证失败，停止初始化');
+        return;
+    }
+    
+    console.log('认证成功，设置退出功能和交互');
+    setupLogout();
     
     // 原有的初始化代码
     if (typeof setupInteractions === 'function') {
@@ -1444,7 +1528,7 @@ function initializeApp() {
     }
 }
 
-// 应用启动
+// 替换原有的立即执行代码，改为调用initializeApp
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
@@ -2141,29 +2225,6 @@ function handleVolumeChange(event) {
 
 function handleTimeUpdate() {
     const currentTime = dom.audioPlayer.currentTime || 0;
-    
-    // 修复：如果时长显示为0但音频正在播放，强制更新时长显示
-    if ((!dom.progressBar.max || dom.progressBar.max === 0) && 
-        !dom.audioPlayer.paused && 
-        currentTime > 0) {
-        debugLog("检测到时长显示异常，强制修复");
-        let estimatedDuration = 180; // 默认3分钟
-        
-        // 尝试从各种来源获取时长
-        if (state.currentSong && state.currentSong.duration) {
-            estimatedDuration = state.currentSong.duration / 1000;
-            debugLog(`使用歌曲数据中的时长: ${estimatedDuration}s`);
-        } else if (dom.audioPlayer.duration && Number.isFinite(dom.audioPlayer.duration) && dom.audioPlayer.duration > 0) {
-            estimatedDuration = dom.audioPlayer.duration;
-            debugLog(`使用audio元素中的时长: ${estimatedDuration}s`);
-        }
-        
-        dom.progressBar.max = estimatedDuration;
-        dom.durationDisplay.textContent = formatTime(estimatedDuration);
-        dom.progressBar.dataset.estimated = "true";
-        debugLog(`强制修复后的音频时长: ${estimatedDuration}s`);
-    }
-
     if (!state.isSeeking) {
         dom.progressBar.value = currentTime;
         dom.currentTimeDisplay.textContent = formatTime(currentTime);
@@ -2175,31 +2236,15 @@ function handleTimeUpdate() {
     state.currentPlaybackTime = currentTime;
     if (Math.abs(currentTime - state.lastSavedPlaybackTime) >= 2) {
         state.lastSavedPlaybackTime = currentTime;
-        safeSetLocalStorage('currentPlaybackTime', currentTime.toFixed(1));
+        safeSetLocalStorage("currentPlaybackTime", currentTime.toFixed(1));
     }
 }
 
-
 function handleLoadedMetadata() {
-    let duration = dom.audioPlayer.duration;
-    
-    // 检查时长是否有效
-    if (!Number.isFinite(duration) || duration <= 0) {
-        debugLog(`无效的音频时长: ${duration}，使用默认值`);
-        duration = 0;
-        
-        // 尝试从其他途径获取时长
-        if (state.currentSong && state.currentSong.duration) {
-            duration = state.currentSong.duration / 1000; // 转换为秒
-            debugLog(`使用歌曲数据中的时长: ${duration}s`);
-        }
-    }
-    
+    const duration = dom.audioPlayer.duration || 0;
     dom.progressBar.max = duration;
     dom.durationDisplay.textContent = formatTime(duration);
     updateProgressBarBackground(dom.audioPlayer.currentTime || 0, duration);
-    
-    debugLog(`音频时长设置: ${duration}s, 格式化: ${formatTime(duration)}`);
 
     if (state.pendingSeekTime != null) {
         setAudioCurrentTime(state.pendingSeekTime);
@@ -2413,13 +2458,13 @@ function selectSearchSource(source) {
 
 // 添加加载超时监控函数
 function startLoadTimeoutMonitoring() {
-    // 清除现有的超时监控
     stopLoadTimeoutMonitoring();
     
     state.loadStartTime = Date.now();
     state.isWaitingForPlayback = true;
     
-    // 设置5秒超时检测
+    // 设置15秒超时检测
+    state.maxLoadTime = 10000; // 10秒
     state.loadTimeoutTimer = setTimeout(() => {
         checkLoadTimeout();
     }, state.maxLoadTime);
@@ -2461,44 +2506,7 @@ function handleLoadTimeout() {
     
     debugLog(`加载超时处理: 当前音质=${state.currentQualityAttempt}, 等待时间=${Date.now() - state.loadStartTime}ms`);
     
-    // 优先尝试切换音源
-    trySwitchSourceDueToLoadTimeout();
-}
-
-// 新增函数：因加载超时尝试切换音源
-async function trySwitchSourceDueToLoadTimeout() {
-    debugLog(`加载超时，尝试在所有音源中查找最快可用音源`);
-    showNotification(`加载超时，正在查找最快音源...`, 'warning');
-    
-    try {
-        // 使用相同音质在所有音源中查找最快可用源
-        const fastestSource = await findFastestSource(state.currentSong, state.currentQualityAttempt);
-        
-        if (fastestSource && fastestSource.success) {
-            debugLog(`找到最快可用音源: ${fastestSource.source}`);
-            showNotification(`切换到 ${getSourceLabel(fastestSource.source)} 音源`, 'info');
-            
-            // 使用找到的音源重新播放
-            const sourceSong = { ...state.currentSong, source: fastestSource.source };
-            await playSong(sourceSong, {
-                autoplay: true,
-                startTime: 0, // 从头开始
-                preserveProgress: false,
-                isRetry: true
-            });
-        } else {
-            // 所有音源在当前音质下都失败，尝试降低音质
-            debugLog(`所有音源在当前音质下均失败，尝试降低音质`);
-            tryLowerQualityDueToLoadTimeout();
-        }
-    } catch (error) {
-        console.warn('查找最快音源失败:', error);
-        tryLowerQualityDueToLoadTimeout();
-    }
-}
-
-// 新增辅助函数：因加载超时尝试降低音质
-function tryLowerQualityDueToLoadTimeout() {
+    // 尝试切换到更低音质
     const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
     if (nextQuality) {
         state.currentQualityAttempt = nextQuality;
@@ -2506,6 +2514,7 @@ function tryLowerQualityDueToLoadTimeout() {
         debugLog(`加载超时，自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
         showNotification(`加载超时，切换为 ${qualityInfo?.label || nextQuality}`, 'warning');
         
+        // 使用新音质重新播放
         setTimeout(() => {
             replayCurrentSongDueToLoadTimeout();
         }, 500);
@@ -2545,12 +2554,12 @@ function startPlaybackMonitoring() {
     state.playbackStuckCount = 0;
     state.isPlaybackStuck = false;
     
-    // 修改这里：将检测间隔从2秒改为1.5秒，这样2次检测就是3秒
+    // 每2秒检查一次播放状态
     state.playbackStuckTimer = setInterval(() => {
         checkPlaybackProgress();
-    }, 1500); // 从2000改为1500毫秒
+    }, 2000);
     
-    debugLog("开始播放状态监控，检测间隔: 1.5秒");
+    debugLog("开始播放状态监控");
 }
 
 function stopPlaybackMonitoring() {
@@ -2569,15 +2578,13 @@ function checkPlaybackProgress() {
     
     const currentTime = dom.audioPlayer.currentTime || 0;
     const timeDiff = currentTime - state.lastPlaybackTime;
-    const duration = dom.audioPlayer.duration || Number(dom.progressBar.max) || 0;
     
-    // 检测播放卡顿：时间差小于0.1秒且当前时间大于0，或者卡顿计数超过2次
+    // 如果2秒内播放进度几乎没有变化，认为卡住了
     if (timeDiff < 0.1 && currentTime > 0) {
         state.playbackStuckCount++;
-        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(3)}秒, 卡住计数=${state.playbackStuckCount}`);
+        debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(2)}秒, 卡住计数=${state.playbackStuckCount}`);
         
-        // 修改条件：卡顿时间≥2秒（2次检测×1.5秒间隔）或卡顿计数≥2次
-        if ((state.playbackStuckCount >= 2) && !state.isPlaybackStuck) {
+        if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
             handlePlaybackStuck();
         }
     } else {
@@ -2598,130 +2605,12 @@ function handlePlaybackStuck() {
     }
     
     state.isPlaybackStuck = true;
-    debugLog(`播放卡住处理: 当前音质=${state.currentQualityAttempt}, 卡住计数=${state.playbackStuckCount}, 当前音源=${state.currentSong.source}`);
+    debugLog(`播放卡住处理: 当前音质=${state.currentQualityAttempt}, 当前音源=${state.currentSourceAttempt}, 卡住计数=${state.playbackStuckCount}`);
     
-    // 优先尝试切换音源
-    trySwitchSourceDueToStuck();
+    // 直接触发播放错误处理，让音质和音源切换逻辑接管
+    handlePlaybackError(state.currentSong, new Error('播放卡住'));
 }
 
-// 新增函数：因播放卡住尝试切换音源
-async function trySwitchSourceDueToStuck() {
-    debugLog(`播放卡住，尝试在所有音源中查找最快可用音源`);
-    showNotification(`播放卡住，正在查找最快音源...`, 'warning');
-    
-    try {
-        // 使用相同音质在所有音源中查找最快可用源
-        const fastestSource = await findFastestSource(state.currentSong, state.currentQualityAttempt);
-        
-        if (fastestSource && fastestSource.success) {
-            debugLog(`找到最快可用音源: ${fastestSource.source}`);
-            showNotification(`切换到 ${getSourceLabel(fastestSource.source)} 音源`, 'info');
-            
-            // 使用找到的音源重新播放
-            const sourceSong = { ...state.currentSong, source: fastestSource.source };
-            await playSong(sourceSong, {
-                autoplay: true,
-                startTime: state.currentPlaybackTime,
-                preserveProgress: true,
-                isRetry: true
-            });
-        } else {
-            // 所有音源在当前音质下都失败，尝试降低音质
-            debugLog(`所有音源在当前音质下均失败，尝试降低音质`);
-            tryLowerQualityDueToStuck();
-        }
-    } catch (error) {
-        console.warn('查找最快音源失败:', error);
-        tryLowerQualityDueToStuck();
-    }
-}
-
-// 新增辅助函数：获取音源标签
-function getSourceLabel(source) {
-    const sourceMap = {
-        "netease": "网易云音乐",
-        "kuwo": "酷我音乐", 
-        "qq": "QQ音乐"
-    };
-    return sourceMap[source] || source;
-}
-
-// 新增辅助函数：搜索替代歌曲
-async function searchAlternativeSong(originalSong, targetSource) {
-    // 构建搜索关键词：歌名 + 主要歌手
-    const artist = Array.isArray(originalSong.artist) ? originalSong.artist[0] : originalSong.artist;
-    const searchQuery = `${originalSong.name} ${artist}`;
-    
-    debugLog(`在 ${targetSource} 搜索替代歌曲: ${searchQuery}`);
-    
-    try {
-        const results = await API.search(searchQuery, targetSource, 5, 1);
-        return results || [];
-    } catch (error) {
-        console.warn(`在 ${targetSource} 搜索失败:`, error);
-        return null;
-    }
-}
-
-// 新增辅助函数：找到最佳匹配的歌曲
-function findBestMatchSong(searchResults, originalSong) {
-    if (!searchResults || searchResults.length === 0) return null;
-    
-    const originalName = originalSong.name.toLowerCase().trim();
-    const originalArtist = (Array.isArray(originalSong.artist) ? originalSong.artist.join(' ') : originalSong.artist).toLowerCase();
-    
-    // 评分机制：找到最匹配的歌曲
-    const scoredResults = searchResults.map(song => {
-        let score = 0;
-        const songName = song.name.toLowerCase().trim();
-        const songArtist = (Array.isArray(song.artist) ? song.artist.join(' ') : song.artist).toLowerCase();
-        
-        // 歌名完全匹配 +3分
-        if (songName === originalName) score += 3;
-        // 歌名包含原歌名 +2分
-        else if (songName.includes(originalName) || originalName.includes(songName)) score += 2;
-        // 歌名有部分匹配 +1分
-        else if (songName.split(' ').some(word => originalName.includes(word))) score += 1;
-        
-        // 艺术家完全匹配 +2分
-        if (songArtist === originalArtist) score += 2;
-        // 艺术家包含原艺术家 +1分
-        else if (songArtist.includes(originalArtist) || originalArtist.includes(songArtist)) score += 1;
-        
-        return { song, score };
-    });
-    
-    // 按分数排序，选择最高分的歌曲
-    scoredResults.sort((a, b) => b.score - a.score);
-    
-    debugLog(`歌曲匹配评分: ${scoredResults.map(r => `${r.song.name}: ${r.score}分`).join(', ')}`);
-    
-    // 返回分数最高的歌曲（至少要有一些匹配）
-    const bestMatch = scoredResults[0];
-    return bestMatch && bestMatch.score > 0 ? bestMatch.song : searchResults[0];
-}
-
-// 新增辅助函数：因播放卡住尝试降低音质
-function tryLowerQualityDueToStuck() {
-    const nextQuality = getNextLowerQuality(state.currentQualityAttempt);
-    if (nextQuality) {
-        state.currentQualityAttempt = nextQuality;
-        const qualityInfo = QUALITY_LEVELS.find(q => q.value === nextQuality);
-        debugLog(`播放卡住，自动切换音质: ${state.currentQualityAttempt} -> ${nextQuality}`);
-        showNotification(`播放卡住，切换为 ${qualityInfo?.label || nextQuality}`, 'warning');
-        
-        setTimeout(() => {
-            replayCurrentSongWithNewQuality();
-        }, 500);
-    } else {
-        // 没有更低的音质可用，切换到下一首
-        debugLog(`所有音质均卡住，切换到下一首歌曲`);
-        showNotification(`播放卡住，自动切换下一首`, 'error');
-        stopPlaybackMonitoring();
-        resetQualityState();
-        playNext();
-    }
-}
 function replayCurrentSongWithNewQuality() {
     if (!state.currentSong) return;
     
@@ -3161,8 +3050,6 @@ function setupInteractions() {
         applyDynamicGradient();
     }
 
-    
-
     captureThemeDefaults();
     const savedTheme = safeGetLocalStorage("theme");
     const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -3177,49 +3064,15 @@ function setupInteractions() {
 
     dom.audioPlayer.volume = state.volume;
     dom.volumeSlider.value = state.volume;
-    // 添加更多音频事件监听来捕获时长信息
-    dom.audioPlayer.addEventListener("durationchange", () => {
-        const duration = dom.audioPlayer.duration;
-        debugLog(`音频时长变化: ${duration}s`);
-        if (Number.isFinite(duration) && duration > 0) {
-            dom.progressBar.max = duration;
-            dom.durationDisplay.textContent = formatTime(duration);
-            updateProgressBarBackground(dom.audioPlayer.currentTime || 0, duration);
-        }
-    });
-
-    dom.audioPlayer.addEventListener("canplay", () => {
-        debugLog(`音频可以播放，时长: ${dom.audioPlayer.duration}s, 就绪状态: ${dom.audioPlayer.readyState}`);
-    });
-
-    dom.audioPlayer.addEventListener("canplaythrough", () => {
-        debugLog(`音频可以流畅播放，时长: ${dom.audioPlayer.duration}s`);
-        // 再次确保时长显示正确
-        const duration = dom.audioPlayer.duration;
-        if (Number.isFinite(duration) && duration > 0) {
-            dom.progressBar.max = duration;
-            dom.durationDisplay.textContent = formatTime(duration);
-        }
-    });
      // 添加音频事件监听
     dom.audioPlayer.addEventListener('error', (e) => {
-    console.error('音频播放错误:', e);
-    stopPlaybackMonitoring();
-    stopLoadTimeoutMonitoring();
-    
-    // 检查是否是时长相关问题
-    if (state.currentSong && !state.isAutoQualitySwitching) {
-        const error = dom.audioPlayer.error;
-        if (error && error.code === 3) { // MEDIA_ERR_DECODE
-            debugLog("检测到解码错误，可能是时长问题");
-            // 尝试切换到较低音质
-            handlePlaybackError(state.currentSong, new Error('音频解码错误'));
-        } else {
+        console.error('音频播放错误:', e);
+        stopPlaybackMonitoring();
+        stopLoadTimeoutMonitoring();
+        if (state.currentSong && !state.isAutoQualitySwitching) {
             handlePlaybackError(state.currentSong, new Error('音频播放错误'));
         }
-    }
-});
-
+    });
 
     dom.audioPlayer.addEventListener('loaderror', (e) => {
         console.error('音频加载错误:', e);
@@ -3283,7 +3136,6 @@ function setupInteractions() {
 
     dom.playPauseBtn.addEventListener("click", togglePlayPause);
     dom.audioPlayer.addEventListener("timeupdate", handleTimeUpdate);
-    dom.audioPlayer.addEventListener("timeupdate", handlePreloadCheck);
     dom.audioPlayer.addEventListener("loadedmetadata", handleLoadedMetadata);
     dom.audioPlayer.addEventListener("play", updatePlayPauseButton);
     dom.audioPlayer.addEventListener("pause", updatePlayPauseButton);
@@ -3402,19 +3254,25 @@ if (dom.showPlaylistBtn) {
         event.preventDefault();
         event.stopPropagation();
         debugLog("播放列表按钮被点击");
-        
         if (isMobileView) {
             // 直接从DOM读取当前状态，确保与UI一致
             const isPanelOpen = document.body.classList.contains("mobile-panel-open");
             const currentView = document.body.getAttribute("data-mobile-panel-view");
             debugLog(`DOM状态检查: panelOpen=${isPanelOpen}, currentView=${currentView}`);
             
-            // 简化逻辑：总是切换播放列表面板
+            // 如果面板已打开且当前是播放列表视图，则关闭
             if (isPanelOpen && currentView === "playlist") {
                 debugLog("播放列表面板已打开，执行关闭");
                 closeMobilePanel();
-            } else {
-                debugLog("打开播放列表面板");
+            } 
+            // 如果面板已打开但当前是其他视图（如歌词），则切换到播放列表
+            else if (isPanelOpen && currentView !== "playlist") {
+                debugLog("面板已打开但视图不是播放列表，切换到播放列表");
+                openMobilePanel("playlist");
+            } 
+            // 面板未打开，打开播放列表
+            else {
+                debugLog("面板未打开，打开播放列表");
                 openMobilePanel("playlist");
             }
         } else {
@@ -4292,8 +4150,6 @@ async function downloadWithQuality(event, index, type, quality) {
 
 // 修复：播放搜索结果 - 添加到播放列表而不是清空
 async function playSearchResult(index) {
-    // 清理预加载资源
-    cleanupPreload();
     const song = state.searchResults[index];
     if (!song) return;
 
@@ -4740,8 +4596,6 @@ function removeFromPlaylist(index) {
 
 // 新增：清空播放列表
 function clearPlaylist() {
-    // 清理预加载资源
-    cleanupPreload();
     if (state.playlistSongs.length === 0) return;
 
     if (state.currentPlaylist === "playlist") {
@@ -4784,8 +4638,6 @@ function clearPlaylist() {
 
 // 新增：播放播放列表中的歌曲
 async function playPlaylistSong(index) {
-    // 清理预加载资源
-    cleanupPreload();
     if (index < 0 || index >= state.playlistSongs.length) return;
 
     const song = state.playlistSongs[index];
@@ -4896,158 +4748,34 @@ function updatePlaylistHighlight() {
 // 修复：播放歌曲函数 - 支持统一播放列表
 function waitForAudioReady(player) {
     if (!player) return Promise.resolve();
-    
-    // 如果已经有元数据，立即返回
-    if (player.readyState >= 1 && Number.isFinite(player.duration) && player.duration > 0) {
+    if (player.readyState >= 1) {
         return Promise.resolve();
     }
-    
     return new Promise((resolve, reject) => {
         const cleanup = () => {
             player.removeEventListener('loadedmetadata', onLoaded);
-            player.removeEventListener('canplaythrough', onCanPlay);
             player.removeEventListener('error', onError);
-            clearTimeout(timeoutId);
         };
-        
         const onLoaded = () => {
-            debugLog(`音频元数据加载成功: duration=${player.duration}`);
-            if (Number.isFinite(player.duration) && player.duration > 0) {
-                cleanup();
-                resolve();
-            }
+            cleanup();
+            resolve();
         };
-        
-        const onCanPlay = () => {
-            debugLog(`音频可以播放: duration=${player.duration}, readyState=${player.readyState}`);
-            // canplaythrough 事件也表示元数据可能已加载
-            if (Number.isFinite(player.duration) && player.duration > 0) {
-                cleanup();
-                resolve();
-            } else {
-                // 如果没有时长信息，等待更长时间或使用默认值
-                setTimeout(() => {
-                    if (state.currentSong === song) {
-                        debugLog("音频可以播放但缺少时长信息，继续等待或使用默认值");
-                        cleanup();
-                        resolve(); // 仍然resolve，避免阻塞播放
-                    }
-                }, 1000);
-            }
-        };
-        
-        const onError = (error) => {
-            debugLog(`音频加载错误: ${error}`);
+        const onError = () => {
             cleanup();
             reject(new Error('音频加载失败'));
         };
-        
-        // 添加超时处理（10秒）
-        const timeoutId = setTimeout(() => {
-            debugLog("音频元数据加载超时，使用默认值继续");
-            cleanup();
-            resolve(); // 超时后仍然resolve，避免阻塞播放
-        }, 10000);
-        
         player.addEventListener('loadedmetadata', onLoaded, { once: true });
-        player.addEventListener('canplaythrough', onCanPlay, { once: true });
         player.addEventListener('error', onError, { once: true });
-        
-        // 如果音频已经在加载中，检查当前状态
-        if (player.readyState >= 1) {
-            setTimeout(() => {
-                if (Number.isFinite(player.duration) && player.duration > 0) {
-                    cleanup();
-                    resolve();
-                }
-            }, 100);
-        }
-    });
-}
-
-// 在现有的 waitForAudioReady 函数之后，添加这个修复版本的函数
-function waitForAudioReadyWithFallback(player, song) {
-    if (!player) return Promise.resolve();
-    
-    // 如果已经有元数据，立即返回
-    if (player.readyState >= 1 && Number.isFinite(player.duration) && player.duration > 0) {
-        return Promise.resolve();
-    }
-    
-    return new Promise((resolve, reject) => {
-        const cleanup = () => {
-            player.removeEventListener('loadedmetadata', onLoaded);
-            player.removeEventListener('canplaythrough', onCanPlay);
-            player.removeEventListener('error', onError);
-            clearTimeout(timeoutId);
-        };
-        
-        const onLoaded = () => {
-            debugLog(`音频元数据加载成功: duration=${player.duration}`);
-            if (Number.isFinite(player.duration) && player.duration > 0) {
-                cleanup();
-                resolve();
-            } else {
-                // 即使loadedmetadata触发，但duration无效，使用备选方案
-                handleInvalidDuration();
-            }
-        };
-        
-        const onCanPlay = () => {
-            debugLog(`音频可以播放: duration=${player.duration}, readyState=${player.readyState}`);
-            if (Number.isFinite(player.duration) && player.duration > 0) {
-                cleanup();
-                resolve();
-            } else {
-                // canplaythrough触发但duration无效
-                handleInvalidDuration();
-            }
-        };
-        
-        const onError = (error) => {
-            debugLog(`音频加载错误: ${error}`);
-            cleanup();
-            reject(new Error('音频加载失败'));
-        };
-        
-        const handleInvalidDuration = () => {
-            debugLog("音频时长无效，使用备选方案继续播放");
-            cleanup();
-            resolve(); // 仍然resolve，避免阻塞播放
-        };
-        
-        // 缩短超时时间到5秒，更快地进入备选方案
-        const timeoutId = setTimeout(() => {
-            debugLog("音频元数据加载超时，使用备选方案");
-            cleanup();
-            resolve(); // 超时后仍然resolve，确保播放可以继续
-        }, 5000);
-        
-        player.addEventListener('loadedmetadata', onLoaded, { once: true });
-        player.addEventListener('canplaythrough', onCanPlay, { once: true });
-        player.addEventListener('error', onError, { once: true });
-        
-        // 如果音频已经在加载中，检查当前状态
-        if (player.readyState >= 1) {
-            setTimeout(() => {
-                if (Number.isFinite(player.duration) && player.duration > 0) {
-                    cleanup();
-                    resolve();
-                } else {
-                    // 如果readyState足够高但duration仍然无效，也使用备选方案
-                    handleInvalidDuration();
-                }
-            }, 100);
-        }
     });
 }
 
 async function playSong(song, options = {}) {
     const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
 
-    // 如果不是重试，重置音质状态
+    // 如果不是重试，重置音质和音源状态
     if (!isRetry) {
         resetQualityState();
+        state.currentSourceAttempt = song.source || state.searchSource;
     }
 
     // 停止之前的监控
@@ -5065,21 +4793,14 @@ async function playSong(song, options = {}) {
         updateCurrentSongInfo(song, { loadArtwork: false });
 
         const currentQuality = state.currentQualityAttempt;
-        const audioUrl = API.getSongUrl(song, currentQuality);
-        debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 重试次数: ${state.qualityRetryCount}`);
+        const currentSource = state.currentSourceAttempt || song.source || state.searchSource;
+        const audioUrl = API.getSongUrl({ ...song, source: currentSource }, currentQuality);
+        debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 音源: ${currentSource}, 重试次数: ${state.qualityRetryCount}`);
 
         const audioData = await API.fetchJson(audioUrl);
 
         if (!audioData || !audioData.url) {
             throw new Error('无法获取音频播放地址');
-        }
-
-        // 如果有歌曲时长信息，预先设置
-        if (audioData.duration) {
-            const preDuration = audioData.duration / 1000; // 转换为秒
-            dom.progressBar.max = preDuration;
-            dom.durationDisplay.textContent = formatTime(preDuration);
-            debugLog(`预设置音频时长: ${preDuration}s`);
         }
 
         const originalAudioUrl = audioData.url;
@@ -5125,20 +4846,6 @@ async function playSong(song, options = {}) {
                 await waitForAudioReady(dom.audioPlayer);
                 selectedAudioUrl = candidateUrl;
                 usedFallbackAudio = candidateUrl !== primaryAudioUrl && candidateAudioUrls.length > 1;
-                
-                // 再次检查时长，确保已正确设置
-                const finalDuration = dom.audioPlayer.duration;
-                if (Number.isFinite(finalDuration) && finalDuration > 0) {
-                    debugLog(`最终音频时长: ${finalDuration}s`);
-                } else {
-                    debugLog(`警告: 音频时长仍不可用, 使用预估值`);
-                    // 如果API返回了时长，使用API的时长
-                    if (audioData.duration) {
-                        const estimatedDuration = audioData.duration / 1000;
-                        dom.progressBar.max = estimatedDuration;
-                        dom.durationDisplay.textContent = formatTime(estimatedDuration);
-                    }
-                }
                 break;
             } catch (error) {
                 lastAudioError = error;
@@ -5200,23 +4907,17 @@ async function playSong(song, options = {}) {
 
         scheduleDeferredSongAssets(song, playPromise);
 
-        debugLog(`开始播放: ${song.name} @${currentQuality}`);
+        debugLog(`开始播放: ${song.name} @${currentQuality} [${currentSource}]`);
         
-        // 显示当前使用的音质
+        // 显示当前使用的音质和音源
         const qualityInfo = QUALITY_LEVELS.find(q => q.value === currentQuality);
-        if (qualityInfo && !isRetry) {
-            showNotification(`正在播放: ${song.name} (${qualityInfo.label})`);
+        const sourceInfo = SOURCE_OPTIONS.find(s => s.value === currentSource);
+        if (qualityInfo && sourceInfo && !isRetry) {
+            showNotification(`正在播放: ${song.name} (${qualityInfo.label} - ${sourceInfo.label})`);
         }
 
         if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
             window.__SOLARA_UPDATE_MEDIA_METADATA();
-        }
-
-        if (autoplay) {
-            // 延迟开始预加载检查
-            setTimeout(() => {
-                handlePreloadCheck();
-            }, 2000);
         }
     } catch (error) {
         console.error('播放歌曲失败:', error);
@@ -5276,121 +4977,14 @@ function scheduleDeferredSongAssets(song, playPromise) {
 
 // 修复：自动播放下一首 - 支持播放模式和雷达自动添加
 async function autoPlayNext() {
-    // 检查当前播放状态，如果时长无效但播放已结束，也触发下一首
-    const currentTime = dom.audioPlayer.currentTime || 0;
-    const duration = dom.audioPlayer.duration || Number(dom.progressBar.max) || 0;
-    
-    // 如果检测到播放结束但时长显示有问题，强制触发下一首
-    if (dom.audioPlayer.ended || 
-        (currentTime > 0 && duration > 0 && currentTime >= duration - 1) ||
-        (currentTime > 0 && !Number.isFinite(duration) && dom.audioPlayer.paused)) {
-        debugLog("检测到播放结束，准备播放下一首");
-    } else {
-        return; // 没有播放结束，不处理
-    }
-    
-    // 检查是否有预加载的下一首歌曲
-    if (state.preloadedNextSong && state.preloadedNextAudio) {
-        const nextSong = state.preloadedNextSong;
-        debugLog(`检测到预加载的下一首歌曲: ${nextSong.name}，直接使用预加载音频`);
-        
-        // 使用预加载的音频元素
-        dom.audioPlayer.src = state.preloadedNextAudio.src;
-        dom.audioPlayer.load();
-        
-        try {
-            await waitForAudioReady(dom.audioPlayer);
-            
-            // 更新当前歌曲信息和播放状态
-            state.currentSong = nextSong;
-            
-            // 重要：更新播放索引和播放列表类型
-            // 需要确定下一首歌曲在哪个播放列表中
-            let nextIndex = -1;
-            let playlistType = state.currentPlaylist;
-            
-            // 在播放列表中查找下一首歌曲的位置
-            if (state.currentPlaylist === "playlist") {
-                nextIndex = state.playlistSongs.findIndex(song => 
-                    song.id === nextSong.id && song.source === nextSong.source);
-                if (nextIndex !== -1) {
-                    state.currentTrackIndex = nextIndex;
-                }
-            } else if (state.currentPlaylist === "online") {
-                nextIndex = state.onlineSongs.findIndex(song => 
-                    song.id === nextSong.id && song.source === nextSong.source);
-                if (nextIndex !== -1) {
-                    state.currentTrackIndex = nextIndex;
-                }
-            } else if (state.currentPlaylist === "search") {
-                nextIndex = state.searchResults.findIndex(song => 
-                    song.id === nextSong.id && song.source === nextSong.source);
-                if (nextIndex !== -1) {
-                    state.currentTrackIndex = nextIndex;
-                }
-            }
-            
-            // 如果没找到，可能是雷达添加的新歌曲，添加到播放列表
-            if (nextIndex === -1) {
-                state.playlistSongs.push(nextSong);
-                state.currentTrackIndex = state.playlistSongs.length - 1;
-                state.currentPlaylist = "playlist";
-                renderPlaylist();
-                debugLog(`预加载歌曲不在当前播放列表，已添加到播放列表: ${nextSong.name}`);
-            }
-            
-            updateCurrentSongInfo(nextSong, { loadArtwork: true });
-            
-            // 设置播放时间
-            if (state.pendingSeekTime != null) {
-                setAudioCurrentTime(state.pendingSeekTime);
-                state.pendingSeekTime = null;
-            }
-            
-            // 开始播放
-            const playPromise = dom.audioPlayer.play();
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    stopLoadTimeoutMonitoring();
-                    startPlaybackMonitoring();
-                }).catch(error => {
-                    console.error('播放预加载音频失败:', error);
-                    // 如果预加载音频播放失败，回退到正常播放流程
-                    fallbackToNormalPlay(nextSong);
-                });
-            }
-            
-            // 清理预加载状态
-            state.preloadedNextSong = null;
-            state.preloadedNextAudio = null;
-            
-            debugLog(`成功播放预加载的下一首歌曲: ${nextSong.name}`);
-            
-            // 更新播放列表高亮
-            updatePlaylistHighlight();
-            savePlayerState();
-            
-            return;
-            
-        } catch (error) {
-            console.error('使用预加载音频失败:', error);
-            // 预加载音频有问题，回退到正常播放
-            fallbackToNormalPlay(nextSong);
-            return;
-        }
-    }
-    
     if (dom.audioPlayer && dom.audioPlayer.__solaraMediaSessionHandledEnded === 'skip') {
         dom.audioPlayer.__solaraMediaSessionHandledEnded = false;
         return;
     }
-    
-    // 原有的单曲循环逻辑
     if (state.playMode === "single") {
+        // 单曲循环
         dom.audioPlayer.currentTime = 0;
-        dom.audioPlayer.play().catch(error => {
-            console.error('单曲循环播放失败:', error);
-        });
+        dom.audioPlayer.play();
         return;
     }
 
@@ -5398,7 +4992,7 @@ async function autoPlayNext() {
     await checkAndAutoAddRadarSongs();
 
     // 在播放下一首前更新歌曲信息
-    const nextSong = getNextSongInfo(); // 使用新的函数名避免冲突
+    const nextSong = getNextSong();
     if (nextSong) {
         state.currentSong = nextSong;
         updateCurrentSongInfo(nextSong, { loadArtwork: true });
@@ -5406,218 +5000,6 @@ async function autoPlayNext() {
     
     playNext();
     updatePlayPauseButton();
-}
-
-// 新增预加载检查函数
-function handlePreloadCheck() {
-    const currentTime = dom.audioPlayer.currentTime || 0;
-    const duration = dom.audioPlayer.duration || Number(dom.progressBar.max) || 0;
-    
-    // 检查是否需要预加载下一首
-    if (duration > 0 && currentTime > 0 && 
-        (duration - currentTime) <= PRELOAD_BUFFER_TIME && 
-        !state.isPreloading && 
-        state.currentSong) {
-        
-        scheduleNextSongPreload();
-    }
-}
-
-// 新增：安排下一首歌曲预加载
-function scheduleNextSongPreload() {
-    // 清除现有的预加载定时器
-    if (state.preloadNextSongTimer) {
-        clearTimeout(state.preloadNextSongTimer);
-        state.preloadNextSongTimer = null;
-    }
-    
-    // 设置预加载定时器，延迟500ms避免频繁触发
-    state.preloadNextSongTimer = setTimeout(() => {
-        preloadNextSong();
-    }, 500);
-}
-
-// 新增：预加载下一首歌曲
-async function preloadNextSong() {
-    if (state.isPreloading || !state.currentSong) {
-        return;
-    }
-    
-    const nextSong = getNextSong();
-    if (!nextSong) {
-        debugLog("没有下一首歌曲可预加载");
-        return;
-    }
-    
-    // 如果下一首和当前歌曲相同（单曲循环模式），不需要预加载
-    if (nextSong.id === state.currentSong.id && nextSong.source === state.currentSong.source) {
-        debugLog("单曲循环模式，跳过预加载");
-        return;
-    }
-    
-    // 如果已经预加载了同一首歌曲，跳过
-    if (state.preloadedNextSong && 
-        state.preloadedNextSong.id === nextSong.id && 
-        state.preloadedNextSong.source === nextSong.source) {
-        debugLog("下一首歌曲已预加载，跳过");
-        return;
-    }
-    
-    state.isPreloading = true;
-    state.preloadRetryCount = 0;
-    
-    try {
-        debugLog(`开始预加载下一首歌曲: ${nextSong.name}`);
-        
-        // 使用最低音质进行预加载以减少流量消耗
-        const preloadQuality = state.playbackQuality;
-        debugLog(`预加载音质: ${preloadQuality}`);
-
-        // 查找最快音源
-        const fastestSource = await findFastestSource(nextSong, preloadQuality);
-        if (!fastestSource || !fastestSource.success) {
-            throw new Error('所有音源预加载均失败');
-        }
-
-        // 使用最快音源的信息
-        const sourceSong = { ...nextSong, source: fastestSource.source };
-        const audioUrl = API.getSongUrl(sourceSong, preloadQuality);
-        debugLog(`预加载使用最快音源: ${fastestSource.source}, URL: ${audioUrl}`);
-
-        const audioData = await API.fetchJson(audioUrl);
-        if (!audioData || !audioData.url) {
-            throw new Error('无法获取预加载音频地址');
-        }
-
-        const originalAudioUrl = audioData.url;
-        const proxiedAudioUrl = buildAudioProxyUrl(originalAudioUrl);
-        const preferredAudioUrl = preferHttpsUrl(originalAudioUrl);
-        const candidateAudioUrls = Array.from(
-            new Set([proxiedAudioUrl, preferredAudioUrl, originalAudioUrl].filter(Boolean))
-        );
-        
-        const primaryAudioUrl = candidateAudioUrls[0] || originalAudioUrl;
-        
-        // 清理之前的预加载音频
-        if (state.preloadedNextAudio) {
-            state.preloadedNextAudio.pause();
-            state.preloadedNextAudio.src = '';
-            state.preloadedNextAudio = null;
-        }
-        
-        // 创建新的音频元素进行预加载
-        const preloadAudio = new Audio();
-        preloadAudio.preload = 'auto';
-        preloadAudio.src = primaryAudioUrl;
-        
-        // 设置预加载事件监听
-        preloadAudio.addEventListener('loadeddata', () => {
-            debugLog(`下一首歌曲预加载成功: ${nextSong.name}`);
-            state.preloadedNextSong = nextSong;
-            state.preloadedNextAudio = preloadAudio;
-            state.isPreloading = false;
-            showNotification(`已预加载下一首: ${nextSong.name}`, 'info', 2000);
-        });
-        
-        preloadAudio.addEventListener('error', (e) => {
-            console.warn('预加载下一首歌曲失败:', e);
-            handlePreloadError(nextSong);
-        });
-        
-        // 开始加载
-        preloadAudio.load();
-        
-    } catch (error) {
-        console.error('预加载下一首歌曲失败:', error);
-        handlePreloadError(nextSong);
-    }
-}
-
-// 新增：处理预加载错误
-function handlePreloadError(failedSong) {
-    state.preloadRetryCount++;
-    
-    if (state.preloadRetryCount < PRELOAD_MAX_RETRIES) {
-        debugLog(`预加载失败，进行第 ${state.preloadRetryCount} 次重试`);
-        // 延迟重试
-        setTimeout(() => {
-            if (state.isPreloading) {
-                preloadNextSong();
-            }
-        }, 1000);
-    } else {
-        debugLog(`预加载失败，已达到最大重试次数`);
-        state.isPreloading = false;
-        state.preloadRetryCount = 0;
-        // 清理预加载状态，但不影响当前播放
-        state.preloadedNextSong = null;
-        if (state.preloadedNextAudio) {
-            state.preloadedNextAudio.pause();
-            state.preloadedNextAudio.src = '';
-            state.preloadedNextAudio = null;
-        }
-    }
-}
-
-// 新增：清理预加载资源
-function cleanupPreload() {
-    if (state.preloadNextSongTimer) {
-        clearTimeout(state.preloadNextSongTimer);
-        state.preloadNextSongTimer = null;
-    }
-    
-    if (state.preloadedNextAudio) {
-        // 移除所有事件监听器
-        state.preloadedNextAudio.onload = null;
-        state.preloadedNextAudio.onerror = null;
-        state.preloadedNextAudio.oncanplaythrough = null;
-        
-        // 停止播放并清理资源
-        state.preloadedNextAudio.pause();
-        state.preloadedNextAudio.src = '';
-        state.preloadedNextAudio.load();
-        state.preloadedNextAudio = null;
-    }
-    
-    state.preloadedNextSong = null;
-    state.isPreloading = false;
-    state.preloadRetryCount = 0;
-    
-    debugLog("预加载资源已清理");
-}
-
-// 新增：回退到正常播放流程
-async function fallbackToNormalPlay(song) {
-    debugLog(`回退到正常播放流程: ${song.name}`);
-    cleanupPreload();
-    
-    // 使用正常的播放流程
-    try {
-        await playSong(song, {
-            autoplay: true,
-            startTime: 0,
-            preserveProgress: false
-        });
-    } catch (error) {
-        console.error('回退播放失败:', error);
-        // 如果还是失败，继续正常的错误处理流程
-        handlePlaybackError(song, error);
-    }
-}
-// 添加一个强制结束当前播放并切换下一首的函数
-function forcePlayNext() {
-    debugLog("强制切换到下一首歌曲");
-    stopPlaybackMonitoring();
-    stopLoadTimeoutMonitoring();
-    resetQualityState();
-    
-    const nextSong = getNextSong();
-    if (nextSong) {
-        state.currentSong = nextSong;
-        updateCurrentSongInfo(nextSong, { loadArtwork: true });
-    }
-    
-    playNext();
 }
 
 // 检查并自动添加雷达歌曲
@@ -5641,8 +5023,8 @@ async function checkAndAutoAddRadarSongs() {
             debugLog(`自动添加雷达歌曲，使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
 
             const [results1, results2] = await Promise.all([
-            API.search(keyword1, "qq", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
-            API.search(keyword2, "qq", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
+                API.search(keyword1, "kuwo", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
+                API.search(keyword2, "kuwo", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
             ]);
 
             const allResults = [...(results1 || []), ...(results2 || [])];
@@ -5834,9 +5216,10 @@ async function exploreOnlineMusic() {
 
         // 使用两个关键词分别搜索
         const [results1, results2] = await Promise.all([
-        API.search(keyword1, "qq", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
-        API.search(keyword2, "qq", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
+            API.search(keyword1, "kuwo", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
+            API.search(keyword2, "kuwo", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
         ]);
+
         // 合并并去重搜索结果
         const allResults = [...(results1 || []), ...(results2 || [])];
         const uniqueResults = allResults.filter((song, index, self) => 
@@ -5911,7 +5294,8 @@ async function exploreOnlineMusic() {
     }
 }
 
-
+// 替换原来的 loadLyrics 函数
+// 替换原来的 loadLyrics 函数
 async function loadLyrics(song) {
     const tryLyricId = async (lyricId) => {
         try {
@@ -5978,41 +5362,96 @@ async function loadLyrics(song) {
 }
 
 // 修复：解析歌词 - 增强格式兼容性（完整版）
+// 替换原来的 parseLyrics 函数
+// 完全替换 parseLyrics 函数
 function parseLyrics(lyricText) {
-    // 输入验证和错误处理
-    if (!lyricText || typeof lyricText !== 'string') {
-        debugLog('歌词文本为空或格式错误');
-        setLyricsContentHtml("<div>歌词数据格式错误</div>");
-        dom.lyrics.classList.add("empty");
-        dom.lyrics.dataset.placeholder = "message";
-        state.lyricsData = [];
-        state.currentLyricLine = -1;
-        return;
+    const lines = lyricText.split('\n');
+    const lyrics = [];
+    let hasValidLyrics = false;
+
+    // 预处理：合并连续的无时间戳行，并正确处理多行歌词
+    const processedLines = [];
+    let currentTime = null;
+    let currentText = [];
+    
+    lines.forEach(line => {
+        line = line.trim();
+        if (!line) return;
+
+        // 检查是否是时间戳行
+        const timeFormats = [
+            /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/,  // [mm:ss.xxx]text
+            /\[(\d{2}):(\d{2}):(\d{2,3})\](.*)/,   // [mm:ss:xxx]text
+            /\[(\d{2}):(\d{2})\](.*)/,              // [mm:ss]text
+            /\[(\d{1,2}):(\d{2})\.(\d{2,3})\](.*)/, // [m:ss.xxx]text
+            /\[(\d{1,2}):(\d{2})\](.*)/             // [m:ss]text
+        ];
+        
+        let match = null;
+        for (const pattern of timeFormats) {
+            match = line.match(pattern);
+            if (match) break;
+        }
+
+        if (match) {
+            // 如果之前有累积的文本，先保存
+            if (currentTime !== null && currentText.length > 0) {
+                processedLines.push({
+                    time: currentTime,
+                    text: currentText.join('\n')
+                });
+                currentText = [];
+            }
+            
+            // 解析时间戳
+            let minutes, seconds, milliseconds = 0;
+            if (match[3] !== undefined) {
+                minutes = parseInt(match[1], 10);
+                seconds = parseInt(match[2], 10);
+                milliseconds = parseInt(match[3].padEnd(3, '0'), 10);
+            } else {
+                minutes = parseInt(match[1], 10);
+                seconds = parseInt(match[2], 10);
+            }
+            currentTime = minutes * 60 + seconds + milliseconds / 1000;
+            
+            // 提取文本
+            const text = match[match.length - 1].trim();
+            if (text && text !== '//' && !text.startsWith('//')) {
+                currentText.push(text);
+            }
+        } else if (line.includes('[') && line.includes(']')) {
+            // 跳过元数据行
+            debugLog(`跳过元数据行: ${line}`);
+        } else if (line.trim() && currentTime !== null) {
+            // 无时间戳的行，累积到当前时间点
+            currentText.push(line.trim());
+        }
+    });
+    
+    // 处理最后累积的内容
+    if (currentTime !== null && currentText.length > 0) {
+        processedLines.push({
+            time: currentTime,
+            text: currentText.join('\n')
+        });
     }
 
-    try {
-        const lines = lyricText.split('\n');
-        const lyrics = [];
-        let hasValidLyrics = false;
-
-        // 预处理：合并连续的无时间戳行，并正确处理多行歌词
-        const processedLines = [];
-        let currentTime = null;
-        let currentText = [];
+    // 如果没有处理出有效行，尝试备选解析方法
+    if (processedLines.length === 0) {
+        debugLog("标准解析失败，尝试备选解析方法");
         
+        // 备选方法：逐行处理，不合并
         lines.forEach(line => {
             line = line.trim();
             if (!line) return;
 
-            // 检查是否是时间戳行
             const timeFormats = [
-                /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/,  // [mm:ss.xxx]text
-                /\[(\d{2}):(\d{2}):(\d{2,3})\](.*)/,   // [mm:ss:xxx]text
-                /\[(\d{2}):(\d{2})\](.*)/,              // [mm:ss]text
-                /\[(\d{1,2}):(\d{2})\.(\d{2,3})\](.*)/, // [m:ss.xxx]text
-                /\[(\d{1,2}):(\d{2})\](.*)/,            // [m:ss]text
-                /\[(\d+):(\d+)\.(\d+)\](.*)/,           // 更宽松的时间格式
-                /\[(\d+):(\d+)\](.*)/                   // 更宽松的时间格式
+                /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/,
+                /\[(\d{2}):(\d{2}):(\d{2,3})\](.*)/,
+                /\[(\d{2}):(\d{2})\](.*)/,
+                /\[(\d{1,2}):(\d{2})\.(\d{2,3})\](.*)/,
+                /\[(\d{1,2}):(\d{2})\](.*)/
             ];
             
             let match = null;
@@ -6022,16 +5461,6 @@ function parseLyrics(lyricText) {
             }
 
             if (match) {
-                // 如果之前有累积的文本，先保存
-                if (currentTime !== null && currentText.length > 0) {
-                    processedLines.push({
-                        time: currentTime,
-                        text: currentText.join('\n')
-                    });
-                    currentText = [];
-                }
-                
-                // 解析时间戳
                 let minutes, seconds, milliseconds = 0;
                 if (match[3] !== undefined) {
                     minutes = parseInt(match[1], 10);
@@ -6041,165 +5470,53 @@ function parseLyrics(lyricText) {
                     minutes = parseInt(match[1], 10);
                     seconds = parseInt(match[2], 10);
                 }
-                
-                // 验证时间值有效性
-                if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) {
-                    debugLog(`跳过无效时间戳: ${line}`);
-                    return;
-                }
-                
-                currentTime = minutes * 60 + seconds + milliseconds / 1000;
-                
-                // 提取文本
+                const time = minutes * 60 + seconds + milliseconds / 1000;
                 const text = match[match.length - 1].trim();
+                
                 if (text && text !== '//' && !text.startsWith('//')) {
-                    currentText.push(text);
+                    processedLines.push({ time, text });
+                    hasValidLyrics = true;
                 }
-            } else if (line.includes('[') && line.includes(']')) {
-                // 跳过元数据行（如：[ti:歌曲名], [ar:歌手名] 等）
-                if (line.match(/\[(ti|ar|al|by|offset):.*\]/i)) {
-                    debugLog(`跳过元数据行: ${line}`);
-                } else {
-                    // 其他可能的标签，暂时跳过
-                    debugLog(`跳过未知标签行: ${line}`);
-                }
-            } else if (line.trim() && currentTime !== null) {
-                // 无时间戳的行，累积到当前时间点
-                currentText.push(line.trim());
-            } else {
-                // 完全无法识别的行，记录日志
-                debugLog(`跳过无法解析的行: ${line}`);
             }
         });
+    } else {
+        hasValidLyrics = processedLines.length > 0;
+    }
+
+    if (hasValidLyrics) {
+        // 排序并去重（按时间）
+        const uniqueLyrics = [];
+        const timeSet = new Set();
         
-        // 处理最后累积的内容
-        if (currentTime !== null && currentText.length > 0) {
-            processedLines.push({
-                time: currentTime,
-                text: currentText.join('\n')
-            });
-        }
-
-        // 如果没有处理出有效行，尝试备选解析方法
-        if (processedLines.length === 0) {
-            debugLog("标准解析失败，尝试备选解析方法");
-            
-            // 备选方法：逐行处理，不合并
-            lines.forEach(line => {
-                line = line.trim();
-                if (!line) return;
-
-                const timeFormats = [
-                    /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/,
-                    /\[(\d{2}):(\d{2}):(\d{2,3})\](.*)/,
-                    /\[(\d{2}):(\d{2})\](.*)/,
-                    /\[(\d{1,2}):(\d{2})\.(\d{2,3})\](.*)/,
-                    /\[(\d{1,2}):(\d{2})\](.*)/,
-                    /\[(\d+):(\d+)\.(\d+)\](.*)/,
-                    /\[(\d+):(\d+)\](.*)/
-                ];
-                
-                let match = null;
-                for (const pattern of timeFormats) {
-                    match = line.match(pattern);
-                    if (match) break;
-                }
-
-                if (match) {
-                    let minutes, seconds, milliseconds = 0;
-                    if (match[3] !== undefined) {
-                        minutes = parseInt(match[1], 10);
-                        seconds = parseInt(match[2], 10);
-                        milliseconds = parseInt(match[3].padEnd(3, '0'), 10);
-                    } else {
-                        minutes = parseInt(match[1], 10);
-                        seconds = parseInt(match[2], 10);
-                    }
-                    
-                    // 验证时间值有效性
-                    if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) {
-                        debugLog(`跳过无效时间戳: ${line}`);
-                        return;
-                    }
-                    
-                    const time = minutes * 60 + seconds + milliseconds / 1000;
-                    const text = match[match.length - 1].trim();
-                    
-                    if (text && text !== '//' && !text.startsWith('//')) {
-                        processedLines.push({ time, text });
-                        hasValidLyrics = true;
-                    }
+        processedLines
+            .sort((a, b) => a.time - b.time)
+            .forEach(item => {
+                // 允许相同时间点的不同歌词（这种情况很少见，但可能发生）
+                const key = `${item.time}-${item.text}`;
+                if (!timeSet.has(key)) {
+                    timeSet.add(key);
+                    uniqueLyrics.push(item);
                 }
             });
-        } else {
-            hasValidLyrics = processedLines.length > 0;
-        }
-
-        if (hasValidLyrics) {
-            // 排序并去重（按时间）
-            const uniqueLyrics = [];
-            const timeSet = new Set();
-            
-            processedLines
-                .sort((a, b) => a.time - b.time)
-                .forEach(item => {
-                    // 允许相同时间点的不同歌词（这种情况很少见，但可能发生）
-                    const key = `${item.time}-${item.text}`;
-                    if (!timeSet.has(key)) {
-                        timeSet.add(key);
-                        uniqueLyrics.push(item);
-                    }
-                });
-            
-            state.lyricsData = uniqueLyrics;
-            displayLyrics();
-            debugLog(`解析歌词成功: ${uniqueLyrics.length} 行`);
-        } else {
-            // 完全没有有效时间戳：显示原始文本
-            const cleanText = lyricText.trim();
-            if (cleanText) {
-                // HTML转义，防止XSS
-                const escapedText = cleanText
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;')
-                    .replace(/\n/g, '<br>');
-                
-                setLyricsContentHtml(`<div class="lyrics-plain">${escapedText}</div>`);
-                dom.lyrics.classList.remove("empty");
-                dom.lyrics.dataset.placeholder = "default";
-                debugLog("无有效时间戳歌词，显示原始文本");
-            } else {
-                setLyricsContentHtml("<div>暂无歌词</div>");
-                dom.lyrics.classList.add("empty");
-                dom.lyrics.dataset.placeholder = "message";
-                debugLog("歌词内容为空");
-            }
-            state.lyricsData = [];
-            state.currentLyricLine = -1;
-        }
-    } catch (error) {
-        console.error('歌词解析异常:', error);
-        debugLog(`歌词解析异常: ${error.message}`);
         
-        // 异常情况下的备选方案：显示原始文本
-        const safeText = lyricText 
-            ? lyricText
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;')
-                .replace(/\n/g, '<br>')
-            : '歌词解析失败';
-            
-        setLyricsContentHtml(`<div class="lyrics-plain">${safeText}</div>`);
-        dom.lyrics.classList.remove("empty");
-        dom.lyrics.dataset.placeholder = "default";
+        state.lyricsData = uniqueLyrics;
+        displayLyrics();
+        debugLog(`解析歌词成功: ${uniqueLyrics.length} 行`);
+    } else {
+        // 完全没有有效时间戳：显示原始文本
+        const cleanText = lyricText.trim();
+        if (cleanText) {
+            setLyricsContentHtml(`<div class="lyrics-plain">${cleanText.replace(/\n/g, '<br>')}</div>`);
+            dom.lyrics.classList.remove("empty");
+            dom.lyrics.dataset.placeholder = "default";
+        } else {
+            setLyricsContentHtml("<div>暂无歌词</div>");
+            dom.lyrics.classList.add("empty");
+            dom.lyrics.dataset.placeholder = "message";
+        }
         state.lyricsData = [];
         state.currentLyricLine = -1;
+        debugLog("无有效时间戳歌词，显示原始文本");
     }
 }
 
@@ -6405,7 +5722,7 @@ function switchMobileView(view) {
 }
 
 // 修复：显示通知
-function showNotification(message, type = "success", duration = 3000) {
+function showNotification(message, type = "success") {
     const notification = dom.notification;
     notification.textContent = message;
     notification.className = `notification ${type}`;
@@ -6413,7 +5730,7 @@ function showNotification(message, type = "success", duration = 3000) {
 
     setTimeout(() => {
         notification.classList.remove("show");
-    }, duration);
+    }, 3000);
 }
 
 // 新增：全局函数用于测试播放列表滚动
@@ -6553,155 +5870,8 @@ window.setLoadTimeout = function(timeoutMs) {
         return `当前加载超时时间: ${state.maxLoadTime}ms`;
     }
 };
-window.getAudioState = function() {
-    return {
-        currentTime: dom.audioPlayer.currentTime,
-        duration: dom.audioPlayer.duration,
-        readyState: dom.audioPlayer.readyState,
-        networkState: dom.audioPlayer.networkState,
-        paused: dom.audioPlayer.paused,
-        ended: dom.audioPlayer.ended,
-        error: dom.audioPlayer.error,
-        src: dom.audioPlayer.src
-    };
-};
-
-// 强制刷新时长显示
-window.refreshDuration = function() {
-    const duration = dom.audioPlayer.duration;
-    debugLog(`强制刷新时长: ${duration}s`);
-    if (Number.isFinite(duration) && duration > 0) {
-        dom.progressBar.max = duration;
-        dom.durationDisplay.textContent = formatTime(duration);
-        updateProgressBarBackground(dom.audioPlayer.currentTime || 0, duration);
-        return `时长已刷新: ${formatTime(duration)}`;
-    } else {
-        return `无法获取有效时长: ${duration}`;
-    }
-};
-
-window.fixDurationIssue = function() {
-    debugLog("手动修复时长问题");
-    const currentTime = dom.audioPlayer.currentTime || 0;
-    let estimatedDuration = 180;
-    
-    if (state.currentSong && state.currentSong.duration) {
-        estimatedDuration = state.currentSong.duration / 1000;
-    }
-    
-    dom.progressBar.max = estimatedDuration;
-    dom.durationDisplay.textContent = formatTime(estimatedDuration);
-    updateProgressBarBackground(currentTime, estimatedDuration);
-    
-    debugLog(`手动设置时长: ${estimatedDuration}s, 当前时间: ${currentTime}s`);
-    return `时长已手动设置为 ${formatTime(estimatedDuration)}`;
-};
 
 // ==== 应用初始化 ====
 // 替换原有的立即执行代码，改为调用initializeApp
 document.addEventListener('DOMContentLoaded', initializeApp);
 dom.audioPlayer.addEventListener("ended", autoPlayNext);
-// 新增：测试播放卡住检测
-window.testPlaybackStuck = function() {
-    debugLog("手动触发播放卡住测试");
-    if (state.currentSong) {
-        // 模拟播放卡住：将上次播放时间设置为当前时间，这样下次检测就会认为没有进度
-        state.lastPlaybackTime = dom.audioPlayer.currentTime || 0;
-        state.playbackStuckCount = 1; // 设置为1，下一次检测就会触发卡住
-        debugLog("已设置播放卡住测试状态，下次检测将触发卡住处理");
-        showNotification("已设置播放卡住测试，等待1.5秒后触发", "info");
-    } else {
-        debugLog("没有正在播放的歌曲，无法测试播放卡住");
-        showNotification("没有正在播放的歌曲，无法测试", "error");
-    }
-};
-
-// 新增：获取播放监控状态
-window.getPlaybackMonitorState = function() {
-    return {
-        lastPlaybackTime: state.lastPlaybackTime,
-        currentPlaybackTime: dom.audioPlayer.currentTime || 0,
-        timeDiff: (dom.audioPlayer.currentTime || 0) - state.lastPlaybackTime,
-        playbackStuckCount: state.playbackStuckCount,
-        isPlaybackStuck: state.isPlaybackStuck,
-        monitoringInterval: 1500,
-        stuckThreshold: 2 // 2次检测 × 1.5秒 = 3秒
-    };
-};
-// 新增调试函数，用于监控预加载状态
-window.getPreloadState = function() {
-    return {
-        isPreloading: state.isPreloading,
-        preloadedNextSong: state.preloadedNextSong,
-        preloadRetryCount: state.preloadRetryCount,
-        preloadAudioReady: state.preloadedNextAudio ? 
-            (state.preloadedNextAudio.readyState >= 2) : false,
-        preloadAudioSrc: state.preloadedNextAudio ? 
-            state.preloadedNextAudio.src : null
-    };
-};
-
-// 新增手动触发预加载的调试函数
-window.triggerPreload = function() {
-    if (state.currentSong) {
-        debugLog("手动触发预加载下一首歌曲");
-        preloadNextSong();
-        return "已触发预加载";
-    } else {
-        return "没有当前歌曲，无法预加载";
-    }
-    
-};
-// 新增：速度检测调试函数
-window.testSourceSpeed = async function() {
-    if (!state.currentSong) {
-        debugLog("没有当前歌曲，无法测试音源速度");
-        return;
-    }
-    
-    debugLog("开始测试各音源速度...");
-    const results = [];
-    
-    for (const source of SPEED_TEST_SOURCES) {
-        const result = await testSourceSpeed(state.currentSong, state.currentQualityAttempt, source);
-        results.push(result);
-    }
-    
-    const successful = results.filter(r => r.success);
-    const failed = results.filter(r => !r.success);
-    
-    debugLog(`速度测试完成: 成功 ${successful.length} 个, 失败 ${failed.length} 个`);
-    successful.sort((a, b) => a.loadTime - b.loadTime);
-    
-    let message = "音源速度测试结果:\n";
-    successful.forEach((result, index) => {
-        message += `${index + 1}. ${result.source}: ${result.loadTime}ms\n`;
-    });
-    
-    if (failed.length > 0) {
-        message += `\n失败音源: ${failed.map(f => f.source).join(', ')}`;
-    }
-    
-    debugLog(message);
-    showNotification(`最快音源: ${successful[0]?.source || '无'} (${successful[0]?.loadTime || 0}ms)`, 'info');
-    
-    return results;
-};
-// 全局错误处理
-window.addEventListener('error', function(event) {
-    console.error('全局错误:', event.error);
-    debugLog(`全局错误: ${event.message} at ${event.filename}:${event.lineno}`);
-});
-
-window.addEventListener('unhandledrejection', function(event) {
-    console.error('未处理的Promise拒绝:', event.reason);
-    debugLog(`未处理的Promise拒绝: ${event.reason}`);
-});
-
-// 音频元素错误处理
-if (dom.audioPlayer) {
-    dom.audioPlayer.addEventListener('error', function(e) {
-        console.error('音频元素错误:', e);
-        debugLog(`音频元素错误: ${dom.audioPlayer.error ? dom.audioPlayer.error.code : '未知错误'}`);
-    });
-}
