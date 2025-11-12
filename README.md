@@ -47,8 +47,9 @@ const BLOCKED_KEYWORDS = [
 7. 添加密码验证，只有输入密码登录才能使用。
 8. 移动端页面风格改了下，添加了播放列表自动定位到正在播放的歌曲。如果不喜欢这个风格或者有其他问题，请自己修改mobile.css文件。
 <img width="1482" height="899" alt="ScreenShot_2025-11-12_191402_577" src="https://github.com/user-attachments/assets/5f6b5d5c-7ec6-45a4-a1f5-c58567b4b99e" />
-![_20251112191631_235_26](https://github.com/user-attachments/assets/d9c3a102-521a-4096-af06-817013da5762)
-
+<img width="300" alt="Screenshot 1" src="https://github.com/user-attachments/assets/0ac29c4f-0c62-4b2c-88e3-dc86a30658a2" />
+<img width="300" alt="Screenshot 2" src="https://github.com/user-attachments/assets/8ecf917d-35c3-43d2-8c3f-ee55dab6d120" />
+<img width="300" alt="Screenshot 3" src="https://github.com/user-attachments/assets/c643a852-406d-40cc-bf66-1c4fbbd2200d" />
 
 
 部署完可以使用自己的域名反向代理 http://127.0.0.1:3001
