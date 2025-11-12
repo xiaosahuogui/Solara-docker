@@ -2,30 +2,17 @@ const express = require('express');
 const fetch = require('node-fetch');
 const router = express.Router();
 
-const FISH_MUSIC_API = process.env.FISH_MUSIC_API || "https://m-api.ceseet.me";
-const FISH_MUSIC_KEY = process.env.FISH_MUSIC_KEY || "";
 const GD_MUSIC_API = "https://music-api.gdstudio.xyz/api.php";
 const KUWO_HOST_PATTERN = /(^|\.)kuwo\.cn$/i;
 const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control", "accept-ranges", "content-length", "content-range", "etag", "last-modified", "expires"];
 
-// 音源映射
-const SOURCE_MAP = {
-    'netease': 'wy',
-    'kuwo': 'kw', 
-    'qq': 'tx',
-};
-
-// 音质映射
+// 音质映射 - 适配GD音乐台API (根据文档只有128/192/320/740/999)
 const QUALITY_MAP = {
-    // 标准映射
-    "128": "128k",
-    "320": "320k",
-    "flac": "flac",
-    "flac24bit": "flac24bit",
-    
-    // 兼容性映射
-    "192": "320k",     // 将不支持的192k提升到320k
-    "999": "flac"      // 历史格式映射
+    "128": "128",
+    "192": "192", 
+    "320": "320",
+    "flac": "999",  // flac映射到999无损
+    // 移除flac24bit，因为GD音乐台不支持24bit
 };
 
 // CORS 头函数
@@ -113,92 +100,24 @@ async function proxyKuwoAudio(targetUrl, req, res) {
     }
 }
 
-// 处理 fish-music 请求
-async function handleFishMusicRequest(params, res) {
-    const { types, source, id, quality, name, count = 50, pages = 1 } = params;
-    
-    // 映射源名称
-    const fishSource = SOURCE_MAP[source] || source;
-    if (!fishSource) {
-        throw new Error(`Unsupported source: ${source}`);
-    }
-    
-    try {
-        let url;
-        const headers = {
-            'User-Agent': 'Mozilla/5.0',
-            'Content-Type': 'application/json',
-            'X-Request-Key': FISH_MUSIC_KEY
-        };
-
-        switch (types) {
-            case 'url':
-                // 映射音质
-                const fishQuality = QUALITY_MAP[quality] || '320k';
-                url = `${FISH_MUSIC_API}/url/${fishSource}/${id}/${fishQuality}`;
-                break;
-                
-            case 'lyric':
-                url = `${FISH_MUSIC_API}/lyric/${fishSource}/${id}`;
-                break;
-                
-            case 'pic':
-                url = `${FISH_MUSIC_API}/pic/${fishSource}/${id}`;
-                break;
-                
-            case 'search':
-                // fish-music 可能不支持搜索，回退到 GD 音乐台
-                throw new Error('Search not supported by fish-music, fallback to GD music');
-                
-            default:
-                throw new Error(`Unsupported type: ${types}`);
-        }
-
-        console.log(`Fish-music request: ${url}`);
-        const response = await fetch(url, { headers });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        // 处理 fish-music 响应格式
-        if (data.code !== 0) {
-            throw new Error(data.msg || `Fish-music error: ${data.code}`);
-        }
-        
-        // 根据类型返回不同格式的数据
-        switch (types) {
-            case 'url':
-                return { url: data.data };
-            case 'lyric':
-                return { 
-                    lyric: data.data?.lyric || data.data,
-                    tlyric: data.data?.tlyric || "",
-                    rlyric: data.data?.rlyric || ""
-                };
-            case 'pic':
-                return { url: data.data };
-            default:
-                return data.data;
-        }
-        
-    } catch (error) {
-        console.error('Fish-music request failed:', error);
-        throw error;
-    }
-}
-
-// 处理 GD 音乐台请求（用于搜索等 fish-music 不支持的功能）
+// 处理 GD 音乐台请求
 async function handleGDMusicRequest(params, res) {
     const apiUrl = new URL(GD_MUSIC_API);
     
     Object.keys(params).forEach(key => {
-        if (key !== 'target' && key !== 'callback') {
+        if (key !== 'target' && key !== 'callback' && key !== 'quality' && key !== 's') {
             apiUrl.searchParams.set(key, params[key]);
         }
     });
+
+    // 特殊处理：将quality参数映射为br参数
+    if (params.quality && params.types === 'url') {
+        const mappedQuality = QUALITY_MAP[params.quality] || '320';
+        apiUrl.searchParams.set('br', mappedQuality);
+    }
+
+    // 添加随机参数避免缓存
+    apiUrl.searchParams.set('_t', Date.now());
 
     if (!apiUrl.searchParams.has('types')) {
         throw new Error('Missing types');
@@ -207,8 +126,9 @@ async function handleGDMusicRequest(params, res) {
     try {
         const response = await fetch(apiUrl.toString(), {
             headers: {
-                'User-Agent': 'Mozilla/5.0',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json',
+                'Referer': 'https://music.gdstudio.xyz/'
             },
         });
 
@@ -225,6 +145,7 @@ async function handleGDMusicRequest(params, res) {
     }
 }
 
+// 处理 API 请求 - 全部使用 GD 音乐台
 async function proxyApiRequest(req, res) {
     const params = req.query;
     
@@ -234,31 +155,7 @@ async function proxyApiRequest(req, res) {
     }
 
     try {
-        let result;
-        
-        // 根据请求类型决定使用哪个 API
-        switch (params.types) {
-            case 'search':
-                // 搜索使用 GD 音乐台（fish-music 不支持搜索）
-                result = await handleGDMusicRequest(params, res);
-                break;
-                
-            case 'url':
-            case 'lyric':
-            case 'pic':
-                // 尝试使用 fish-music，失败时回退到 GD 音乐台
-                try {
-                    result = await handleFishMusicRequest(params, res);
-                } catch (fishError) {
-                    console.log('Fish-music failed, fallback to GD music:', fishError.message);
-                    result = await handleGDMusicRequest(params, res);
-                }
-                break;
-                
-            default:
-                // 其他请求使用 GD 音乐台
-                result = await handleGDMusicRequest(params, res);
-        }
+        const result = await handleGDMusicRequest(params, res);
 
         const headers = createCorsHeaders({
             'Content-Type': 'application/json; charset=utf-8'

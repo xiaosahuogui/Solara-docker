@@ -1147,3 +1147,63 @@ body.mobile-view .lyrics-content div[data-index] br {
     margin: 4px 0 !important;
     height: 0 !important;
 }
+/* 在 mobile.css 文件的适当位置添加以下代码 */
+/* 确保播放列表项的下载按钮始终显示 */
+body.mobile-view .playlist-items .playlist-item .playlist-item-download {
+    display: inline-flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
+
+/* 调整下载按钮的位置和样式，确保不会与其他元素重叠 */
+body.mobile-view .playlist-items .playlist-item {
+    position: relative;
+    padding-right: 90px !important; /* 为按钮留出足够空间 */
+}
+
+body.mobile-view .playlist-items .playlist-item .playlist-item-download {
+    position: absolute;
+    right: 52px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #1c1c1e;
+    font-size: 0.8rem;
+    transition: all 0.25s ease;
+    z-index: 2;
+}
+
+body.mobile-view .playlist-items .playlist-item .playlist-item-download:hover,
+body.mobile-view .playlist-items .playlist-item .playlist-item-download:focus {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(255, 255, 255, 1);
+    color: #007aff;
+    transform: translateY(-50%) scale(1.1);
+}
+
+body.mobile-view .playlist-items .playlist-item .playlist-item-download:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* 确保删除按钮也保持可见（如果需要的话） */
+body.mobile-view .playlist-items .playlist-item .playlist-item-remove {
+    display: inline-flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
+
+/* 调整播放列表项在悬停或当前状态时的按钮样式 */
+body.mobile-view .playlist-items .playlist-item:hover .playlist-item-download,
+body.mobile-view .playlist-items .playlist-item.current .playlist-item-download {
+    background: rgba(255, 255, 255, 0.8);
+    color: #007aff;
+}

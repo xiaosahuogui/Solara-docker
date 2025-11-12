@@ -1,13 +1,10 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
-const session = require('express-session');
+const cookieSession = require('cookie-session'); // 使用 cookie-session
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-// 在 server.js 中添加
-const FISH_MUSIC_API = process.env.FISH_MUSIC_API || "https://m-api.ceseet.me";
-const FISH_MUSIC_KEY = process.env.FISH_MUSIC_KEY || "";
 
 // 配置密码（在实际环境中应该使用环境变量）
 const AUTH_PASSWORD = process.env.SOLARA_PASSWORD || 'solara123';
@@ -15,18 +12,14 @@ const AUTH_PASSWORD = process.env.SOLARA_PASSWORD || 'solara123';
 // 信任代理（如果部署在反向代理后面）
 app.set('trust proxy', 1);
 
-// Session配置 - 修复版本
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'solara-music-secret-key-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    secure: false, // 开发环境设为false，生产环境根据HTTPS设置
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24小时
-    sameSite: 'lax'
-  },
-  name: 'solara.sid' // 明确的session名称
+// Cookie Session 配置
+app.use(cookieSession({
+  name: 'solara.sid',
+  keys: [process.env.SESSION_SECRET || 'solara-music-secret-key-change-in-production'],
+  maxAge: 24 * 60 * 60 * 1000, // 24小时
+  secure: process.env.NODE_ENV === 'production', // 生产环境需要HTTPS
+  httpOnly: true,
+  sameSite: 'lax'
 }));
 
 // CORS 配置 - 修复版本
@@ -47,7 +40,7 @@ const requireAuth = (req, res, next) => {
     next();
   } else {
     // 对于 API 请求返回 JSON 错误
-    if (req.path.startsWith('/api/') && !req.path.startsWith('/api/login') && !req.path.startsWith('/api/auth-status') && !req.path.startsWith('/api/health')) {
+    if (req.path.startsWith('/api/') && !req.path.startsWith('/api/login') && !req.path.startsWith('/api/auth-status')) {
       res.status(401).json({ error: '需要身份验证' });
     } else {
       // 对于页面请求重定向到登录页
@@ -87,13 +80,8 @@ app.post('/api/login', express.json(), (req, res) => {
 
 app.post('/api/logout', (req, res) => {
   console.log('用户退出登录');
-  req.session.destroy((err) => {
-    if (err) {
-      console.error('退出登录错误:', err);
-      return res.status(500).json({ error: '退出登录失败' });
-    }
-    res.json({ success: true, message: '已退出登录' });
-  });
+  req.session = null; // 对于 cookie-session，设置为 null 来清除
+  res.json({ success: true, message: '已退出登录' });
 });
 
 app.get('/api/auth-status', (req, res) => {
@@ -104,18 +92,6 @@ app.get('/api/auth-status', (req, res) => {
     serverTimeLocal: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
   };
   res.json(status);
-});
-
-// 健康检查端点（公开）
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Solara Music Server is running',
-    timestamp: new Date().toISOString(),
-    timestampLocal: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
-    version: '1.0.0',
-    authenticated: !!req.session.authenticated
-  });
 });
 
 // 导入路由
@@ -153,7 +129,8 @@ app.use((err, req, res, next) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Solara Music Server running on port ${PORT}`);
   console.log(`默认密码: ${AUTH_PASSWORD}`);
-  console.log(`健康检查: http://localhost:${PORT}/api/health`);
   console.log(`登录页面: http://localhost:${PORT}/login.html`);
   console.log(`主页面: http://localhost:${PORT}/`);
+  console.log(`使用 GD 音乐台 API`);
+  console.log(`Session 存储: cookie-session (客户端存储)`);
 });

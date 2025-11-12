@@ -152,43 +152,6 @@
             color: #888;
             font-size: 0.9rem;
         }
-
-        .server-status {
-            margin-top: 15px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .server-status.ok {
-            background: #e8f5e8;
-            color: #2d5a2d;
-            border: 1px solid #c8e6c9;
-        }
-
-        .server-status.error {
-            background: #ffebee;
-            color: #c62828;
-            border: 1px solid #ffcdd2;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        .status-dot.ok {
-            background: #4caf50;
-        }
-
-        .status-dot.error {
-            background: #f44336;
-        }
     </style>
 </head>
 <body>
@@ -221,10 +184,6 @@
         
         <div class="footer">
             <p>仅供授权用户访问</p>
-            <div id="serverStatus" class="server-status" style="display: none;">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">检查服务器状态...</span>
-            </div>
         </div>
     </div>
 
@@ -253,41 +212,6 @@
             } catch (error) {
                 console.error('检查认证状态失败:', error);
                 return false;
-            }
-        }
-
-        // 获取服务器状态
-        async function getServerStatus() {
-            try {
-                const response = await fetch('/api/health', {
-                    headers: {
-                        'Cache-Control': 'no-cache'
-                    }
-                });
-                
-                const statusElement = document.getElementById('serverStatus');
-                const statusDot = document.getElementById('statusDot');
-                const statusText = document.getElementById('statusText');
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    statusElement.className = 'server-status ok';
-                    statusDot.className = 'status-dot ok';
-                    statusText.textContent = '服务器状态正常';
-                    statusElement.style.display = 'inline-flex';
-                } else {
-                    throw new Error('服务器响应异常');
-                }
-            } catch (error) {
-                const statusElement = document.getElementById('serverStatus');
-                const statusDot = document.getElementById('statusDot');
-                const statusText = document.getElementById('statusText');
-                
-                statusElement.className = 'server-status error';
-                statusDot.className = 'status-dot error';
-                statusText.textContent = '服务器连接失败';
-                statusElement.style.display = 'inline-flex';
-                console.error('获取服务器状态失败:', error);
             }
         }
 
@@ -371,10 +295,7 @@
         document.addEventListener('DOMContentLoaded', async () => {
             console.log('登录页面加载完成');
             
-            // 先获取服务器状态
-            await getServerStatus();
-            
-            // 然后检查认证状态
+            // 检查认证状态
             const isAuthenticated = await checkAuthStatus();
             if (!isAuthenticated) {
                 // 自动聚焦密码输入框

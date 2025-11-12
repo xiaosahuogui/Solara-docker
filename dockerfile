@@ -11,11 +11,15 @@ COPY . .
 
 # 创建非root用户
 RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
+RUN adduser -S appuser -u 1001
 
 # 更改文件所有者
-RUN chown -R nextjs:nodejs /app
-USER nextjs
+RUN chown -R appuser:nodejs /app
+USER appuser
+
+# 设置环境变量默认值（可选）
+ENV NODE_ENV=production
+ENV PORT=3001
 
 # 暴露端口
 EXPOSE 3001
