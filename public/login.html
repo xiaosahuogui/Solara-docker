@@ -69,12 +69,19 @@
             font-size: 1rem;
             transition: all 0.3s ease;
             background: #fff;
+            text-align: center; /* 新增：文字居中 */
+        }
+
+        .form-group input::placeholder {
+            text-align: center; /*  placeholder 文字也居中 */
+            color: #999;
         }
 
         .form-group input:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            text-align: center; /* 聚焦时也保持居中 */
         }
 
         .login-btn {
