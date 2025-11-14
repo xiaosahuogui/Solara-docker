@@ -4,36 +4,6 @@
 
 使用Dockerfile进行部署，可以部署在VPS上，默认监听3001端口。
 
-部署方法：
-
-一、使用Docker Hub 镜像部署：
-1.自己安装好Docker，创建solara文件夹，在solara文件夹创建docker-compose.yml 文件
-
-按以下格式填写compose文件:
-
-services:
-  solara-music:
-    image: xiaosahuogui/solara-music:latest
-    container_name: solara-music
-    restart: unless-stopped
-    ports:
-      - "3001:3001"
-    environment:
-      - NODE_ENV=production
-      - PORT=3001
-      - SOLARA_PASSWORD=solara123  # 修改为你的密码
-      - SESSION_SECRET=KLmlKDruIBRYjrT5ct7B3xqG25ZF2p59    # 修改为随机字符串
-    volumes:
-      - ./logs:/app/logs
-      
-2. 在项目文件夹下执行
-   docker compose pull
-   docker compose up -d
-
-3. 部署网站反代 127.0.0.1:3001 即可通过网站使用。
-
-二、使用Dockerfile部署：
-
 1. 在VPS上创建solara-music目录，这里我是在/opt目录下创建的，将所有文件上传到solara-music文件夹中。
 
 2. 进入项目目录
