@@ -1,6 +1,6 @@
 services:
   solara-music:
-    build: .
+    image: xiaosahuogui/solara-music:latest 
     container_name: solara-music
     restart: unless-stopped
     ports:
