@@ -1,6 +1,6 @@
 基于https://github.com/akudamatata/Solara  项目进行修改，感谢原作者的无私分享。
 
-还在测试中，有问题请自行修改！！！
+部署方法
 
 一、使用Dockerfile进行部署：
 
