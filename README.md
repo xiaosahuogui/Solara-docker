@@ -35,7 +35,7 @@ docker compose up -d
 2. 创建docker-compose.yml文件,填入"Docker镜像部署-docker-compose.yml"中的内容并修改密码
 3. docker compose pull
 4. docker compose up -d
-5. 使用网站反代 127.0.0.1:3000
+5. 使用网站反代 127.0.0.1:3001
 
 近期修改：
 1. 使用GD音乐台API接口，对移动端界面做了调整。
