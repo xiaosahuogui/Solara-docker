@@ -6,7 +6,8 @@ on:
     # 当 push 只修改 README.md 或 docker-compose.yml 时，不触发 workflow
     paths-ignore:
       - "README.md"
-      - "docker-compose.yml"
+      - "Dockerfile部署-docker-compose.yml"
+      - "Docker镜像部署-docker-compose.yml"
   release:
     types: [created]
 
