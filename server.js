@@ -28,14 +28,47 @@ const sessionKeys = process.env.SESSION_KEYS
   ? process.env.SESSION_KEYS.split(',') 
   : ['solara-music-secret-key-1', 'solara-music-secret-key-2'];
 
-app.use(cookieSession({
-  name: 'solara.sid',
-  keys: sessionKeys,
-  maxAge: 24 * 60 * 60 * 1000, // 24小时
-  secure: process.env.NODE_ENV === 'production', // 生产环境使用HTTPS
-  httpOnly: true,
-  sameSite: 'lax'
-}));
+// 智能检测是否应该使用 secure cookie
+const shouldUseSecureCookie = (req) => {
+  // 如果明确设置了 FORCE_HTTPS 环境变量，强制使用 secure
+  if (process.env.FORCE_HTTPS === 'true') {
+    return true;
+  }
+  
+  // 如果明确设置了 DISABLE_SECURE_COOKIE 环境变量，强制禁用 secure
+  if (process.env.DISABLE_SECURE_COOKIE === 'true') {
+    return false;
+  }
+  
+  // 自动检测：如果请求是通过 HTTPS 或者设置了 X-Forwarded-Proto 头为 https
+  const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+  const isHttps = protocol === 'https';
+  
+  console.log(`请求协议检测: ${protocol}, 原始协议: ${req.protocol}, 是否HTTPS: ${isHttps}`);
+  
+  return isHttps;
+};
+
+// 动态 session 中间件
+app.use((req, res, next) => {
+  const useSecureCookie = shouldUseSecureCookie(req);
+  
+  // 为当前请求动态创建 session 中间件
+  cookieSession({
+    name: 'solara.sid',
+    keys: sessionKeys,
+    maxAge: 24 * 60 * 60 * 1000, // 24小时
+    secure: useSecureCookie, // 根据请求动态设置
+    httpOnly: true,
+    sameSite: 'lax'
+  })(req, res, next);
+  
+  // 记录 session 配置信息（仅记录一次，避免重复日志）
+  if (!req.session._configLogged) {
+    console.log(`Session 配置 - 协议: ${req.protocol}, 安全Cookie: ${useSecureCookie}, 用户IP: ${req.ip}`);
+    req.session._configLogged = true;
+  }
+});
 
 // CORS 配置
 app.use(cors({
@@ -55,7 +88,7 @@ const requireAuth = (req, res, next) => {
   if (req.method === 'OPTIONS') {
     return next();
   }
-  
+
   if (req.session.authenticated) {
     next();
   } else {
@@ -75,15 +108,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 公开路由（不需要认证）
 app.post('/api/login', express.json(), (req, res) => {
   const { password } = req.body;
-  
+
   if (password === AUTH_PASSWORD) {
     req.session.authenticated = true;
     req.session.user = { 
       loginTime: new Date().toISOString(),
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      loginProtocol: req.get('X-Forwarded-Proto') || req.protocol,
+      secureCookie: shouldUseSecureCookie(req)
     };
-    
-    console.log('登录成功，用户:', req.session.user);
+
+    console.log(`登录成功 - 用户: ${req.session.user.loginTime}, 协议: ${req.session.user.loginProtocol}, 安全Cookie: ${req.session.user.secureCookie}`);
     res.json({ 
       success: true, 
       message: '登录成功',
@@ -109,19 +144,57 @@ app.get('/api/auth-status', (req, res) => {
     authenticated: !!req.session.authenticated,
     user: req.session.user || null,
     serverTime: new Date().toISOString(),
-    serverTimeLocal: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+    serverTimeLocal: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+    currentProtocol: req.get('X-Forwarded-Proto') || req.protocol,
+    secureCookie: shouldUseSecureCookie(req)
   };
   res.json(status);
 });
 
 // 健康检查端点
 app.get('/api/health', (req, res) => {
+  const protocol = req.get('X-Forwarded-Proto') || req.protocol;
   res.json({ 
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    memory: process.memoryUsage()
+    memory: process.memoryUsage(),
+    protocol: protocol,
+    secureCookie: shouldUseSecureCookie(req),
+    headers: {
+      'x-forwarded-proto': req.get('X-Forwarded-Proto'),
+      'x-forwarded-for': req.get('X-Forwarded-For'),
+      'user-agent': req.get('User-Agent')
+    }
   });
+});
+
+// 调试端点：显示当前请求的详细信息
+app.get('/api/debug', (req, res) => {
+  const debugInfo = {
+    headers: {
+      'x-forwarded-proto': req.get('X-Forwarded-Proto'),
+      'x-forwarded-for': req.get('X-Forwarded-For'),
+      'host': req.get('Host'),
+      'user-agent': req.get('User-Agent')
+    },
+    connection: {
+      protocol: req.protocol,
+      secure: req.secure,
+      ip: req.ip,
+      ips: req.ips
+    },
+    session: {
+      authenticated: !!req.session.authenticated,
+      secureCookie: shouldUseSecureCookie(req),
+      config: {
+        FORCE_HTTPS: process.env.FORCE_HTTPS,
+        DISABLE_SECURE_COOKIE: process.env.DISABLE_SECURE_COOKIE,
+        NODE_ENV: process.env.NODE_ENV
+      }
+    }
+  };
+  res.json(debugInfo);
 });
 
 // 导入路由
@@ -212,10 +285,28 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Solara Music Server running on port ${PORT}`);
+  console.log(`=================================================`);
+  console.log(`Solara Music Server 启动成功`);
+  console.log(`=================================================`);
+  console.log(`服务端口: ${PORT}`);
   console.log(`默认密码: ${AUTH_PASSWORD}`);
   console.log(`Session Keys: ${sessionKeys.length} keys configured`);
-  console.log(`健康检查: http://localhost:${PORT}/api/health`);
-  console.log(`登录页面: http://localhost:${PORT}/login.html`);
-  console.log(`主页面: http://localhost:${PORT}/`);
+  console.log(`环境变量配置:`);
+  console.log(`  - NODE_ENV: ${process.env.NODE_ENV || '未设置'}`);
+  console.log(`  - FORCE_HTTPS: ${process.env.FORCE_HTTPS || '未设置'}`);
+  console.log(`  - DISABLE_SECURE_COOKIE: ${process.env.DISABLE_SECURE_COOKIE || '未设置'}`);
+  console.log(`Cookie 安全模式: 智能检测`);
+  console.log(`=================================================`);
+  console.log(`访问地址:`);
+  console.log(`  - 直接访问: http://localhost:${PORT}`);
+  console.log(`  - 健康检查: http://localhost:${PORT}/api/health`);
+  console.log(`  - 调试信息: http://localhost:${PORT}/api/debug`);
+  console.log(`  - 登录页面: http://localhost:${PORT}/login.html`);
+  console.log(`=================================================`);
+  console.log(`使用说明:`);
+  console.log(`  - HTTP 环境: 自动使用普通 Cookie`);
+  console.log(`  - HTTPS 环境: 自动使用安全 Cookie`);
+  console.log(`  - 强制 HTTPS: 设置 FORCE_HTTPS=true`);
+  console.log(`  - 强制 HTTP: 设置 DISABLE_SECURE_COOKIE=true`);
+  console.log(`=================================================`);
 });
