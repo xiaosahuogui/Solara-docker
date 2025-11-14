@@ -847,7 +847,7 @@ function handleQualitySwitch(song, error) {
 // 新增辅助函数：获取下一首歌曲
 function getNextSong() {
     let playlist = [];
-    let nextIndex = -1;
+    let currentIndex = state.currentTrackIndex;
 
     if (state.currentPlaylist === "playlist") {
         playlist = state.playlistSongs;
@@ -859,10 +859,20 @@ function getNextSong() {
 
     if (playlist.length === 0) return null;
 
+    let nextIndex = -1;
+
     if (state.playMode === "random") {
-        nextIndex = Math.floor(Math.random() * playlist.length);
+        // 随机模式下，确保不重复播放同一首（除非只有一首）
+        if (playlist.length === 1) {
+            nextIndex = 0;
+        } else {
+            do {
+                nextIndex = Math.floor(Math.random() * playlist.length);
+            } while (nextIndex === currentIndex && playlist.length > 1);
+        }
     } else {
-        nextIndex = (state.currentTrackIndex + 1) % playlist.length;
+        // 顺序模式
+        nextIndex = (currentIndex + 1) % playlist.length;
     }
 
     return playlist[nextIndex] || null;
@@ -1178,6 +1188,7 @@ const state = {
     loadStartTime: 0, // 开始加载的时间戳
     maxLoadTime: 10000, // 最大加载时间（10秒）
     isWaitingForPlayback: false, // 是否在等待播放开始
+    isAutoPlayingNext: false, // 新增：防止自动播放下一首重复调用
 };
 
 // ==== Media Session integration (Safari/iOS Lock Screen) ====
@@ -1250,7 +1261,7 @@ const state = {
     }
 
     function updateMediaMetadata() {
-        // 依赖现有全局 state.currentSong；已在项目中使用 localStorage 保存/恢复。:contentReference[oaicite:7]{index=7}
+        // 依赖现有全局 state.currentSong；已在项目中使用 localStorage 保存/恢复。
         const song = state.currentSong || {};
         const title = song.name || dom.currentSongTitle?.textContent || 'Solara';
         const artist = song.artist || dom.currentSongArtist?.textContent || '';
@@ -1305,7 +1316,7 @@ const state = {
         // 播放/暂停交给 <audio> 默认行为即可
         try {
             navigator.mediaSession.setActionHandler('previoustrack', () => {
-                // 直接复用你已有的全局函数（HTML 里也在用）:contentReference[oaicite:9]{index=9}
+                // 直接复用你已有的全局函数（HTML 里也在用）
                 if (typeof window.playPrevious === 'function') {
                     const result = window.playPrevious();
                     if (result && typeof result.then === 'function') {
@@ -1385,10 +1396,12 @@ const state = {
     audio.addEventListener('ended', () => {
         navigator.mediaSession.playbackState = 'paused';
         updatePositionState();
+        
         const refresh = () => {
             triggerMediaSessionMetadataRefresh();
             audio[MEDIA_SESSION_ENDED_FLAG] = false;
         };
+
         if (typeof autoPlayNext === 'function') {
             try {
                 audio[MEDIA_SESSION_ENDED_FLAG] = 'handling';
@@ -1400,6 +1413,7 @@ const state = {
                 console.warn('自动播放下一首失败:', error);
             }
         }
+        
         audio[MEDIA_SESSION_ENDED_FLAG] = 'skip';
         if (typeof window.playNext === 'function') {
             try {
@@ -1430,8 +1444,7 @@ const state = {
     triggerMediaSessionMetadataRefresh();
 })();
 
-// 认证状态检查
-// 认证状态检查 - 修复版本
+
 async function checkAuth() {
     try {
         const response = await fetch('/api/auth-status', {
@@ -2549,12 +2562,13 @@ function checkPlaybackProgress() {
     const currentTime = dom.audioPlayer.currentTime || 0;
     const timeDiff = currentTime - state.lastPlaybackTime;
     
-    // 如果2秒内播放进度几乎没有变化，认为卡住了
-    if (timeDiff < 0.1 && currentTime > 0) {
+    // 放宽卡住判断条件：5秒内进度变化小于0.2秒才认为是卡住
+    if (timeDiff < 0.2 && currentTime > 0) {
         state.playbackStuckCount++;
         debugLog(`播放可能卡住: 进度变化=${timeDiff.toFixed(2)}秒, 卡住计数=${state.playbackStuckCount}`);
         
-        if (state.playbackStuckCount >= 2 && !state.isPlaybackStuck) {
+        // 增加到3次才触发处理
+        if (state.playbackStuckCount >= 3 && !state.isPlaybackStuck) {
             handlePlaybackStuck();
         }
     } else {
@@ -3054,19 +3068,35 @@ function setupInteractions() {
     });
     
     dom.audioPlayer.addEventListener('pause', () => {
-        stopPlaybackMonitoring();
-        stopLoadTimeoutMonitoring();
-    });
-    
+    debugLog("音频暂停事件触发");
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
+    updatePlayPauseButton();
+});
+
     dom.audioPlayer.addEventListener('ended', () => {
-        stopPlaybackMonitoring();
-        stopLoadTimeoutMonitoring();
-    });
+    debugLog("音频播放结束事件触发");
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
     
+    // 移除 Media Session 标记检查，直接处理自动播放
+    debugLog("开始处理自动播放下一首");
+    autoPlayNext();
+});
+
     dom.audioPlayer.addEventListener('seeked', () => {
         // 跳转后重置播放状态监控
         state.lastPlaybackTime = dom.audioPlayer.currentTime || 0;
         state.playbackStuckCount = 0;
+        debugLog(`跳转完成，重置播放监控状态，当前时间: ${state.lastPlaybackTime}`);
+    });
+
+    // 添加缺失的音频事件监听
+    dom.audioPlayer.addEventListener('play', () => {
+        debugLog("音频开始播放事件触发");
+        // 开始播放监控
+        startPlaybackMonitoring();
+        updatePlayPauseButton();
     });
 
     // 添加播放进度事件监听，用于检测播放开始
@@ -4950,32 +4980,105 @@ function scheduleDeferredSongAssets(song, playPromise) {
     }
 }
 
-// 修复：自动播放下一首 - 支持播放模式和雷达自动添加
 async function autoPlayNext() {
-    if (dom.audioPlayer && dom.audioPlayer.__solaraMediaSessionHandledEnded === 'skip') {
-        dom.audioPlayer.__solaraMediaSessionHandledEnded = false;
+    debugLog("autoPlayNext 被调用，开始处理下一首播放");
+    
+    // 检查是否已经在处理中，避免重复调用
+    if (state.isAutoPlayingNext) {
+        debugLog("已经在处理自动播放下一首，跳过重复调用");
         return;
-    }
-    if (state.playMode === "single") {
-        // 单曲循环
-        dom.audioPlayer.currentTime = 0;
-        dom.audioPlayer.play();
-        return;
-    }
-
-    // 检查是否需要自动添加雷达歌曲
-    await checkAndAutoAddRadarSongs();
-
-    // 在播放下一首前更新歌曲信息
-    const nextSong = getNextSong();
-    if (nextSong) {
-        state.currentSong = nextSong;
-        updateCurrentSongInfo(nextSong, { loadArtwork: true });
     }
     
-    playNext();
-    updatePlayPauseButton();
+    state.isAutoPlayingNext = true;
+    
+    try {
+        // 单曲循环模式
+        if (state.playMode === "single") {
+            debugLog("单曲循环模式，重新播放当前歌曲");
+            dom.audioPlayer.currentTime = 0;
+            const playPromise = dom.audioPlayer.play();
+            if (playPromise !== undefined) {
+                await playPromise.catch(error => {
+                    console.error('单曲循环播放失败:', error);
+                });
+            }
+            return;
+        }
+
+        // 重置播放监控状态
+        stopPlaybackMonitoring();
+        stopLoadTimeoutMonitoring();
+        
+        // 检查是否需要自动添加雷达歌曲
+        await checkAndAutoAddRadarSongs();
+
+        // 获取下一首歌曲 - 这里只声明一次
+        const nextSong = getNextSong();
+        if (!nextSong) {
+            debugLog("没有找到下一首歌曲");
+            showNotification("播放列表已结束", "info");
+            return;
+        }
+
+        // 更新当前曲目索引
+        if (state.currentPlaylist === "playlist") {
+            const playlist = state.playlistSongs;
+            state.currentTrackIndex = playlist.findIndex(song => 
+                song.id === nextSong.id && song.source === nextSong.source
+            );
+        } else if (state.currentPlaylist === "online") {
+            const playlist = state.onlineSongs;
+            state.currentTrackIndex = playlist.findIndex(song => 
+                song.id === nextSong.id && song.source === nextSong.source
+            );
+        } else if (state.currentPlaylist === "search") {
+            const playlist = state.searchResults;
+            state.currentTrackIndex = playlist.findIndex(song => 
+                song.id === nextSong.id && song.source === nextSong.source
+            );
+        }
+
+        // 确保索引有效
+        if (state.currentTrackIndex === -1) {
+            state.currentTrackIndex = 0; // 回退到第一首
+        }
+
+        debugLog(`准备播放下一首: ${nextSong.name}`);
+
+        // 更新当前歌曲信息
+        state.currentSong = nextSong;
+        await updateCurrentSongInfo(nextSong, { loadArtwork: true });
+
+        // 播放下一首
+        if (state.currentPlaylist === "playlist") {
+            await playPlaylistSong(state.currentTrackIndex);
+        } else if (state.currentPlaylist === "online") {
+            await playOnlineSong(state.currentTrackIndex);
+        } else if (state.currentPlaylist === "search") {
+            await playSearchResult(state.currentTrackIndex);
+        }
+
+        debugLog("下一首播放成功");
+
+    } catch (error) {
+        console.error('自动播放下一首失败:', error);
+        debugLog(`自动播放下一首失败: ${error.message}`);
+        
+        // 如果播放失败，延迟一段时间后重试
+        setTimeout(() => {
+            if (!dom.audioPlayer.paused) return;
+            debugLog("尝试重新播放下一首");
+            state.isAutoPlayingNext = false;
+            autoPlayNext();
+        }, 2000);
+    } finally {
+        // 短暂延迟后重置标志，避免立即重复调用
+        setTimeout(() => {
+            state.isAutoPlayingNext = false;
+        }, 500);
+    }
 }
+
 
 // 检查并自动添加雷达歌曲
 async function checkAndAutoAddRadarSongs() {
@@ -5051,8 +5154,14 @@ async function checkAndAutoAddRadarSongs() {
         }
     }
 }
-// 修复：播放下一首 - 支持播放模式和统一播放列表
+
 function playNext() {
+    debugLog("playNext 被调用");
+    
+    // 停止当前的播放监控
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
+    
     let nextIndex = -1;
     let playlist = [];
 
@@ -5064,15 +5173,22 @@ function playNext() {
         playlist = state.searchResults;
     }
 
-    if (playlist.length === 0) return;
+    if (playlist.length === 0) {
+        debugLog("播放列表为空，无法播放下一首");
+        showNotification("播放列表为空", "warning");
+        return;
+    }
 
     // 重置音质状态
     resetQualityState();
 
+    // 计算下一首索引
     if (state.playMode === "random") {
         nextIndex = Math.floor(Math.random() * playlist.length);
+        debugLog(`随机模式，下一首索引: ${nextIndex}`);
     } else {
         nextIndex = (state.currentTrackIndex + 1) % playlist.length;
+        debugLog(`顺序模式，下一首索引: ${nextIndex} (当前: ${state.currentTrackIndex}, 总数: ${playlist.length})`);
     }
 
     state.currentTrackIndex = nextIndex;
@@ -5084,6 +5200,7 @@ function playNext() {
         updateCurrentSongInfo(nextSong, { loadArtwork: true });
     }
 
+    // 根据播放列表类型播放
     if (state.currentPlaylist === "playlist") {
         playPlaylistSong(nextIndex);
     } else if (state.currentPlaylist === "online") {
@@ -5093,8 +5210,14 @@ function playNext() {
     }
 }
 
-// 修复：播放上一首 - 支持播放模式和统一播放列表
+
 function playPrevious() {
+    debugLog("playPrevious 被调用");
+    
+    // 停止当前的播放监控
+    stopPlaybackMonitoring();
+    stopLoadTimeoutMonitoring();
+    
     let prevIndex = -1;
     let playlist = [];
 
@@ -5106,16 +5229,23 @@ function playPrevious() {
         playlist = state.searchResults;
     }
 
-    if (playlist.length === 0) return;
+    if (playlist.length === 0) {
+        debugLog("播放列表为空，无法播放上一首");
+        showNotification("播放列表为空", "warning");
+        return;
+    }
 
     // 重置音质状态
     resetQualityState();
 
+    // 计算上一首索引
     if (state.playMode === "random") {
         prevIndex = Math.floor(Math.random() * playlist.length);
+        debugLog(`随机模式，上一首索引: ${prevIndex}`);
     } else {
         prevIndex = state.currentTrackIndex - 1;
         if (prevIndex < 0) prevIndex = playlist.length - 1;
+        debugLog(`顺序模式，上一首索引: ${prevIndex} (当前: ${state.currentTrackIndex}, 总数: ${playlist.length})`);
     }
 
     state.currentTrackIndex = prevIndex;
@@ -5127,6 +5257,7 @@ function playPrevious() {
         updateCurrentSongInfo(prevSong, { loadArtwork: true });
     }
 
+    // 根据播放列表类型播放
     if (state.currentPlaylist === "playlist") {
         playPlaylistSong(prevIndex);
     } else if (state.currentPlaylist === "online") {
