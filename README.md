@@ -1,6 +1,6 @@
 基于https://github.com/akudamatata/Solara  项目进行修改，感谢原作者的无私分享。
 
-部署方法
+部署方法(仅针对VPS，如果是使用软路由等部署，请根据实际情况调整docker-compose文件）
 
 一、使用Dockerfile进行部署：
 
