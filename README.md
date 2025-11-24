@@ -61,3 +61,8 @@ const BLOCKED_KEYWORDS = [
 部署完可以使用自己的域名反向代理 http://127.0.0.1:3001
 
 然后就可以通过访问自己的域名来听歌了。（PS：免费音源的API接口时不时的就会抽下风，没啥好办法）
+
+## 许可协议
+
+本项目基于 [Solara](https://github.com/akudamatata/Solara)（作者：akudamatata）进行衍生开发。
+本项目采用 CC BY-NC-SA 协议，禁止任何商业化行为。
