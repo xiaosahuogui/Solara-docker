@@ -1999,30 +1999,53 @@ function handleVolumeChange(event) {
 
 function handleTimeUpdate() {
     const currentTime = dom.audioPlayer.currentTime || 0;
+    
+    // 如果用户没有正在拖动进度条，更新网页进度条显示
     if (!state.isSeeking) {
         dom.progressBar.value = currentTime;
         dom.currentTimeDisplay.textContent = formatTime(currentTime);
         updateProgressBarBackground(currentTime, Number(dom.progressBar.max));
     }
 
+    // 同步歌词
     syncLyrics();
 
+    // 更新内部状态
     state.currentPlaybackTime = currentTime;
+    
+    // 保存播放进度到本地存储 (每变动2秒保存一次，避免频繁写入)
     if (Math.abs(currentTime - state.lastSavedPlaybackTime) >= 2) {
         state.lastSavedPlaybackTime = currentTime;
         safeSetLocalStorage("currentPlaybackTime", currentTime.toFixed(1));
     }
+
 }
 
 function handleLoadedMetadata() {
     const duration = dom.audioPlayer.duration || 0;
+    
+    // 更新网页内的进度条最大值
     dom.progressBar.max = duration;
     dom.durationDisplay.textContent = formatTime(duration);
     updateProgressBarBackground(dom.audioPlayer.currentTime || 0, duration);
 
+    // 处理之前的 Seek 请求（如果有）
     if (state.pendingSeekTime != null) {
         setAudioCurrentTime(state.pendingSeekTime);
         state.pendingSeekTime = null;
+    }
+
+    // --- 新增修复部分 ---
+    // 音频元数据加载完成后，立即更新 Media Session 的进度
+    // 这能修复切歌后锁屏界面总时长显示为 0:00 的问题
+    if ('mediaSession' in navigator) {
+        // 确保状态为播放或暂停（取决于自动播放是否成功），防止状态滞留在 "none"
+        if (!dom.audioPlayer.paused) {
+            navigator.mediaSession.playbackState = 'playing';
+        } else {
+            navigator.mediaSession.playbackState = 'paused';
+        }
+        updatePositionState();
     }
 }
 
@@ -2768,15 +2791,47 @@ function updateMediaMetadata() {
 }
 
 function updatePositionState() {
+    // 基础检查：浏览器是否支持该 API
     if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
     
-    const duration = Number.isFinite(dom.audioPlayer.duration) ? dom.audioPlayer.duration : 0;
-    const position = Number.isFinite(dom.audioPlayer.currentTime) ? dom.audioPlayer.currentTime : 0;
-    const playbackRate = Number.isFinite(dom.audioPlayer.playbackRate) ? dom.audioPlayer.playbackRate : 1;
-    
+    const audio = dom.audioPlayer;
+    if (!audio) return;
+
+    // 1. 获取并验证时长 (Duration)
+    // 注意：MediaSession API 要求 duration 必须是有限的正数 (duration > 0)
+    // 如果歌曲正在加载 (NaN) 或时长为 0，不能调用 setPositionState，否则会抛出错误导致进度条失效
+    const rawDuration = audio.duration;
+    const duration = (Number.isFinite(rawDuration) && rawDuration > 0) ? rawDuration : 0;
+
+    if (duration === 0) {
+        // 如果时长无效，直接返回，不更新状态，避免报错
+        return;
+    }
+
+    // 2. 获取并验证当前位置 (Position)
+    let position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+
+    // 3. 关键修复：确保 position 永远不会超过 duration
+    // 某些浏览器在播放结束瞬间 position 可能微小地超过 duration，导致 API 报错
+    if (position > duration) {
+        position = duration;
+    }
+    if (position < 0) {
+        position = 0;
+    }
+
+    // 4. 获取播放速率
+    const playbackRate = Number.isFinite(audio.playbackRate) ? audio.playbackRate : 1;
+
     try {
-        navigator.mediaSession.setPositionState({ duration, position, playbackRate });
+        // 更新锁屏/通知栏进度条
+        navigator.mediaSession.setPositionState({
+            duration: duration,
+            playbackRate: playbackRate,
+            position: position
+        });
     } catch (error) {
+        // 即使有防呆处理，某些极端情况仍可能报错，捕获但不中断流程
         console.warn('更新播放位置状态失败:', error);
     }
 }
