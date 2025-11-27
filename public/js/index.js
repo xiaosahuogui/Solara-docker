@@ -86,7 +86,7 @@ const BLOCKED_KEYWORDS = [
     "自制", "铃声", "手机铃声", "网友自制",
     "教学", "教程", "练习", "乐理", "指法",
     "片段", "剪辑", "剪切", "节选", "精彩片段",
-    "非原唱", "不是原唱",
+    "非原唱", "不是原唱", "翻自",
     "伴奏版", "纯音乐版", "无人声", "无演唱",
     
     // 新增屏蔽关键词
@@ -641,6 +641,12 @@ function resetQualityState() {
 
 
 function handlePlaybackError(song, error) {
+    // 关键修改：检查当前歌曲是否还是出错的这首歌，或者列表是否已清空
+    if (!state.currentSong || state.currentSong.id !== song.id || state.playlistSongs.length === 0) {
+        debugLog("错误处理中止：歌曲已切换或列表已清空");
+        return;
+    }
+
     // 检查是否已经在处理音质切换
     if (state.isAutoQualitySwitching) {
         debugLog(`已经在进行音质切换，忽略重复错误`);
@@ -999,17 +1005,17 @@ const state = {
     currentAudioUrl: null,
     lyricsData: [],
     currentLyricLine: -1,
-    currentPlaylist: savedCurrentPlaylist, // 'online', 'search', or 'playlist'
+    currentPlaylist: savedCurrentPlaylist, 
     searchPage: 1,
-    searchKeyword: "", // 确保这里有初始值
+    searchKeyword: "", 
     searchSource: savedSearchSource,
     hasMoreResults: true,
     currentSong: savedCurrentSong,
     currentArtworkUrl: null,
     debugMode: false,
-    isSearchMode: false, // 新增：搜索模式状态
-    playlistSongs: savedPlaylistSongs, // 新增：统一播放列表
-    playMode: savedPlayMode, // 新增：播放模式 'list', 'single', 'random'
+    isSearchMode: false, 
+    playlistSongs: savedPlaylistSongs, 
+    playMode: savedPlayMode, 
     playbackQuality: savedPlaybackQuality,
     volume: savedVolume,
     currentPlaybackTime: savedPlaybackTime,
@@ -1018,10 +1024,10 @@ const state = {
     isSeeking: false,
     qualityMenuOpen: false,
     sourceMenuOpen: false,
-    userScrolledLyrics: false, // 新增：用户是否手动滚动歌词
-    lyricsScrollTimeout: null, // 新增：歌词滚动超时
-    userScrolledPlaylist: false, // 新增：用户是否手动滚动播放列表
-    playlistScrollTimeout: null, // 新增：播放列表滚动超时
+    userScrolledLyrics: false, 
+    lyricsScrollTimeout: null, 
+    userScrolledPlaylist: false, 
+    playlistScrollTimeout: null, 
     themeDefaultsCaptured: false,
     dynamicPalette: null,
     currentPaletteImage: null,
@@ -1033,22 +1039,23 @@ const state = {
     currentGradient: '',
     isMobileInlineLyricsOpen: false,
     selectedSearchResults: new Set(),
-    radarOffset: savedRadarOffset, // 新增：雷达探索偏移量
-    playbackQuality: savedPlaybackQuality,
-    currentQualityAttempt: savedPlaybackQuality, // 当前尝试的音质
-    qualityRetryCount: 0, // 音质重试次数
-    maxQualityRetries: 3, // 最大重试次数
-    isAutoQualitySwitching: false, // 是否正在自动切换音质
-    playbackStuckTimer: null, // 播放卡住检测定时器
-    lastPlaybackTime: 0, // 上次播放时间
-    playbackStuckCount: 0, // 播放卡住计数
-    maxStuckRetries: 2, // 最大卡住重试次数
-    isPlaybackStuck: false, // 是否播放卡住
-    loadTimeoutTimer: null, // 加载超时定时器
-    loadStartTime: 0, // 开始加载的时间戳
-    maxLoadTime: 10000, // 最大加载时间（10秒）
-    isWaitingForPlayback: false, // 是否在等待播放开始
-    isAutoPlayingNext: false, // 新增：防止自动播放下一首重复调用
+    radarOffset: savedRadarOffset, 
+    currentQualityAttempt: savedPlaybackQuality, 
+    qualityRetryCount: 0, 
+    maxQualityRetries: 3, 
+    isAutoQualitySwitching: false, 
+    playbackStuckTimer: null, 
+    lastPlaybackTime: 0, 
+    playbackStuckCount: 0, 
+    maxStuckRetries: 2, 
+    isPlaybackStuck: false, 
+    loadTimeoutTimer: null, 
+    loadStartTime: 0, 
+    maxLoadTime: 10000, 
+    isWaitingForPlayback: false, 
+    isAutoPlayingNext: false, 
+    // === 新增字段 ===
+    playbackRequestId: 0, // 用于解决异步竞态问题
 };
 
 // ==== Media Session integration (Safari/iOS Lock Screen) ====
@@ -2096,6 +2103,9 @@ async function togglePlayPause() {
             });
         }
     } else {
+        // 关键：用户主动暂停时，增加 ID，防止正在进行的加载操作在未来自动触发播放
+        state.playbackRequestId++;
+        
         dom.audioPlayer.pause();
         
         // 更新 Media Session 状态
@@ -4484,6 +4494,9 @@ function removeFromPlaylist(index) {
     const removingCurrent = state.currentPlaylist === "playlist" && state.currentTrackIndex === index;
 
     if (removingCurrent) {
+        // 关键：增加 RequestID，立即使 pending 的播放请求失效
+        state.playbackRequestId++; 
+
         if (state.playlistSongs.length === 1) {
             dom.audioPlayer.pause();
             dom.audioPlayer.src = "";
@@ -4547,6 +4560,9 @@ function removeFromPlaylist(index) {
 // 新增：清空播放列表
 function clearPlaylist() {
     if (state.playlistSongs.length === 0) return;
+
+    // 关键：增加 RequestID，失效所有正在进行的加载
+    state.playbackRequestId++;
 
     if (state.currentPlaylist === "playlist") {
         dom.audioPlayer.pause();
@@ -4719,9 +4735,12 @@ function waitForAudioReady(player) {
     });
 }
 
-// 修改：播放成功时重置状态
 async function playSong(song, options = {}) {
     const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
+
+    // 1. 生成新的请求ID，这会立即使之前所有正在进行的 playSong 操作失效
+    state.playbackRequestId++; 
+    const currentRequestId = state.playbackRequestId;
 
     // 如果不是重试，重置音质和音源状态
     if (!isRetry) {
@@ -4763,7 +4782,17 @@ async function playSong(song, options = {}) {
         const audioUrl = API.getSongUrl({ ...song, source: currentSource }, currentQuality);
         debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 音源: ${currentSource}, 重试次数: ${state.qualityRetryCount}`);
 
+        // === 检查点 1: 网络请求前 ===
+        if (state.playbackRequestId !== currentRequestId) return;
+
         const audioData = await API.fetchJson(audioUrl);
+
+        // === 检查点 2: 网络请求后 ===
+        // 如果在等待API返回期间用户暂停或切歌，立即中止
+        if (state.playbackRequestId !== currentRequestId) {
+            debugLog("播放请求已过期 (fetchJson后)，停止加载");
+            return;
+        }
 
         if (!audioData || !audioData.url) {
             throw new Error('无法获取音频播放地址');
@@ -4810,11 +4839,21 @@ async function playSong(song, options = {}) {
         let usedFallbackAudio = false;
 
         for (const candidateUrl of candidateAudioUrls) {
+            // === 检查点 3: 尝试备选链接前 ===
+            if (state.playbackRequestId !== currentRequestId) return;
+
             dom.audioPlayer.src = candidateUrl;
             dom.audioPlayer.load();
 
             try {
                 await waitForAudioReady(dom.audioPlayer);
+                
+                // === 检查点 4: 音频加载就绪后 ===
+                if (state.playbackRequestId !== currentRequestId) {
+                    debugLog("播放请求已过期 (waitForAudioReady后)，停止加载");
+                    return;
+                }
+
                 selectedAudioUrl = candidateUrl;
                 usedFallbackAudio = candidateUrl !== primaryAudioUrl && candidateAudioUrls.length > 1;
                 break;
@@ -4851,12 +4890,25 @@ async function playSong(song, options = {}) {
         let playPromise = null;
 
         if (autoplay) {
+            // === 检查点 5: 执行播放前 ===
+            if (state.playbackRequestId !== currentRequestId) {
+                debugLog("播放请求已过期 (play前)，取消播放");
+                return;
+            }
+
             // 开始加载超时监控
             startLoadTimeoutMonitoring();
             
             playPromise = dom.audioPlayer.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
+                    // === 检查点 6: 播放Promise成功后 ===
+                    // 虽然播放成功了，但如果ID变了，说明用户可能刚好点击了暂停，这时应该立即暂停
+                    if (state.playbackRequestId !== currentRequestId) {
+                        dom.audioPlayer.pause();
+                        return;
+                    }
+
                     // 播放成功，停止加载超时监控，开始播放状态监控
                     stopLoadTimeoutMonitoring();
                     startPlaybackMonitoring();
@@ -4867,6 +4919,11 @@ async function playSong(song, options = {}) {
                         updatePositionState();
                     }
                 }).catch(error => {
+                    // 如果ID变了，由于 play() 被打断(例如 load()被调用)导致的 AbortError 应该被忽略
+                    if (state.playbackRequestId !== currentRequestId) {
+                        return;
+                    }
+
                     console.error('播放失败:', error);
                     stopLoadTimeoutMonitoring();
                     
@@ -4919,6 +4976,12 @@ async function playSong(song, options = {}) {
             window.__SOLARA_UPDATE_MEDIA_METADATA();
         }
     } catch (error) {
+        // === 检查点 7: 错误捕获中 ===
+        if (state.playbackRequestId !== currentRequestId) {
+            debugLog("播放请求已过期 (catch块)，忽略错误");
+            return;
+        }
+
         console.error('播放歌曲失败:', error);
         stopLoadTimeoutMonitoring();
         
@@ -4930,10 +4993,11 @@ async function playSong(song, options = {}) {
         
         handlePlaybackError(song, error);
     } finally {
-        savePlayerState();
+        if (state.playbackRequestId === currentRequestId) {
+            savePlayerState();
+        }
     }
 }
-
 
 function scheduleDeferredSongAssets(song, playPromise) {
     const run = () => {
@@ -5971,8 +6035,6 @@ window.setRadarOffset = function(offset) {
     debugLog(`雷达偏移量已设置为 ${newOffset}`);
 };
 // ==== 调试函数 ====
-// 添加调试函数 - 放在文件末尾，事件监听器之前
-// 更新调试函数，添加播放状态信息
 window.getQualityState = function() {
     return {
         playbackQuality: state.playbackQuality,
