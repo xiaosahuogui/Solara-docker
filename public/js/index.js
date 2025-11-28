@@ -510,18 +510,24 @@ function buildAudioProxyUrl(url) {
     if (!url || typeof url !== "string") return url;
 
     try {
-        const parsedUrl = new URL(url, window.location.href);
-        if (parsedUrl.protocol === "https:") {
-            return parsedUrl.toString();
+        const currentProtocol = window.location.protocol;
+        const targetUrl = new URL(url);
+
+        // 如果当前是 HTTPS，但目标是 HTTP，必须走代理
+        if (currentProtocol === "https:" && targetUrl.protocol === "http:") {
+            // 使用 encodeURIComponent 包裹目标 URL
+            return `${API.baseUrl}?target=${encodeURIComponent(url)}`;
         }
 
-        if (parsedUrl.protocol === "http:" && /(^|\.)kuwo\.cn$/i.test(parsedUrl.hostname)) {
-            return `${API.baseUrl}?target=${encodeURIComponent(parsedUrl.toString())}`;
+        // 特殊处理：某些域名强制走代理（即使是 HTTPS 也可能需要代理来绕过 IP 限制或 Referrer）
+        // 这里保留你原来的酷我逻辑，并可以扩展
+        if (/(^|\.)kuwo\.cn$/i.test(targetUrl.hostname)) {
+             return `${API.baseUrl}?target=${encodeURIComponent(url)}`;
         }
 
-        return parsedUrl.toString();
+        return url;
     } catch (error) {
-        console.warn("无法解析音频地址，跳过代理", error);
+        console.warn("解析音频地址失败，跳过代理处理", error);
         return url;
     }
 }
@@ -3181,6 +3187,12 @@ function setupInteractions() {
             toggleMobileInlineLyrics();
         });
     }
+
+    // [新增] 强制音频元素不发送 Referrer，解决 403 Forbidden 问题
+    if (dom.audioPlayer) {
+        dom.audioPlayer.setAttribute('referrerpolicy', 'no-referrer');
+        dom.audioPlayer.crossOrigin = "anonymous"; // 尝试跨域支持
+    }
     // 在 setupInteractions 函数中添加面板关闭按钮的事件处理
     if (dom.mobilePanelClose) {
         dom.mobilePanelClose.addEventListener("click", (event) => {
@@ -4790,10 +4802,22 @@ function waitForAudioReady(player) {
     });
 }
 
+function extractUrlFromData(data) {
+    if (!data) return null;
+    if (typeof data === 'string') return data; // 直接返回字符串
+    
+    // 常见的数据结构路径
+    return data.url || 
+           (data.data && data.data.url) || 
+           (data.data && data.data[0] && data.data[0].url) ||
+           (data.req_0 && data.req_0.data && data.req_0.data.sip && data.req_0.data.sip[0] && data.req_0.data.midurlinfo && data.req_0.data.midurlinfo[0] && data.req_0.data.sip[0] + data.req_0.data.midurlinfo[0].purl) || // QQ音乐复杂结构示例
+           null;
+}
+
 async function playSong(song, options = {}) {
     const { autoplay = true, startTime = 0, preserveProgress = false, isRetry = false } = options;
 
-    // 1. 生成新的请求ID，这会立即使之前所有正在进行的 playSong 操作失效
+    // 1. 生成新的请求ID
     state.playbackRequestId++; 
     const currentRequestId = state.playbackRequestId;
 
@@ -4803,24 +4827,19 @@ async function playSong(song, options = {}) {
         state.currentSourceAttempt = song.source || state.searchSource;
     }
     
-    // 重置自动切换标志
     state.isAutoQualitySwitching = false;
-
-    // 停止之前的监控
     stopPlaybackMonitoring();
     stopLoadTimeoutMonitoring();
 
-    // 立即更新 Media Session 状态为 none，准备切换到新歌曲
+    // 更新 Media Session
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'none';
-        // 立即更新元数据 - 使用全局函数
-        if (typeof updateMediaMetadata === 'function') {
-            updateMediaMetadata();
-        } else if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
+        if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
             window.__SOLARA_UPDATE_MEDIA_METADATA();
         }
     }
 
+    // 重置背景色相关
     window.clearTimeout(pendingPaletteTimer);
     state.audioReadyForPalette = false;
     state.pendingPaletteData = null;
@@ -4829,56 +4848,60 @@ async function playSong(song, options = {}) {
     state.pendingPaletteReady = false;
 
     try {
+        // 先加载封面和标题，让用户感觉响应很快
         updateCurrentSongInfo(song, { loadArtwork: false });
 
         const currentQuality = state.currentQualityAttempt;
-        // 使用歌曲原本的音源，不再尝试切换音源
         const currentSource = song.source || state.searchSource;
-        const audioUrl = API.getSongUrl({ ...song, source: currentSource }, currentQuality);
-        debugLog(`获取音频URL: ${audioUrl}, 音质: ${currentQuality}, 音源: ${currentSource}, 重试次数: ${state.qualityRetryCount}`);
+        
+        // 获取音频 API 地址
+        const apiUrl = API.getSongUrl({ ...song, source: currentSource }, currentQuality);
+        debugLog(`请求音频API: ${apiUrl}`);
 
-        // === 检查点 1: 网络请求前 ===
         if (state.playbackRequestId !== currentRequestId) return;
 
-        const audioData = await API.fetchJson(audioUrl);
+        // 请求 API 获取真实的音频文件地址
+        const apiResponse = await API.fetchJson(apiUrl);
 
-        // === 检查点 2: 网络请求后 ===
-        // 如果在等待API返回期间用户暂停或切歌，立即中止
         if (state.playbackRequestId !== currentRequestId) {
-            debugLog("播放请求已过期 (fetchJson后)，停止加载");
+            debugLog("播放请求已过期 (API返回后)，停止");
             return;
         }
 
-        if (!audioData || !audioData.url) {
-            throw new Error('无法获取音频播放地址');
+        // [修改] 使用增强的提取逻辑
+        const originalAudioUrl = extractUrlFromData(apiResponse);
+
+        if (!originalAudioUrl) {
+            console.error("API 返回数据:", apiResponse);
+            throw new Error('API 返回的音频地址为空');
         }
 
-        const originalAudioUrl = audioData.url;
+        // [关键修改] 构建候选地址列表
+        // 1. 代理地址 (解决 HTTPS 混排和跨域)
         const proxiedAudioUrl = buildAudioProxyUrl(originalAudioUrl);
+        // 2. HTTPS 升级地址 (如果原地址是 HTTP)
         const preferredAudioUrl = preferHttpsUrl(originalAudioUrl);
+        
+        // 构建候选列表，去重并过滤空值
+        // 优先尝试代理地址，因为它是最稳的
         const candidateAudioUrls = Array.from(
             new Set([proxiedAudioUrl, preferredAudioUrl, originalAudioUrl].filter(Boolean))
         );
 
-        const primaryAudioUrl = candidateAudioUrls[0] || originalAudioUrl;
-
-        if (proxiedAudioUrl && proxiedAudioUrl !== originalAudioUrl) {
-            debugLog(`音频地址已通过代理转换为 HTTPS: ${proxiedAudioUrl}`);
-        } else if (preferredAudioUrl && preferredAudioUrl !== originalAudioUrl) {
-            debugLog(`音频地址由 HTTP 升级为 HTTPS: ${preferredAudioUrl}`);
-        }
+        debugLog(`音频候选地址: ${JSON.stringify(candidateAudioUrls)}`);
 
         state.currentSong = song;
         state.currentAudioUrl = null;
 
         dom.audioPlayer.pause();
+        // 设置防盗链策略 (以防 setupInteractions 没执行到)
+        dom.audioPlayer.setAttribute('referrerpolicy', 'no-referrer');
 
+        // 处理进度条逻辑
         if (!preserveProgress) {
             state.currentPlaybackTime = 0;
             state.lastSavedPlaybackTime = 0;
             safeSetLocalStorage('currentPlaybackTime', '0');
-            
-            // 重置进度条显示
             dom.progressBar.value = 0;
             dom.currentTimeDisplay.textContent = "00:00";
             updateProgressBarBackground(0, Number(dom.progressBar.max));
@@ -4886,166 +4909,110 @@ async function playSong(song, options = {}) {
             state.currentPlaybackTime = startTime;
             state.lastSavedPlaybackTime = startTime;
         }
-
         state.pendingSeekTime = startTime > 0 ? startTime : null;
 
+        // [修改] 尝试加载音频
         let selectedAudioUrl = null;
         let lastAudioError = null;
-        let usedFallbackAudio = false;
 
         for (const candidateUrl of candidateAudioUrls) {
-            // === 检查点 3: 尝试备选链接前 ===
             if (state.playbackRequestId !== currentRequestId) return;
 
+            // 检查 URL 是否包含 undefined 字符串
+            if (candidateUrl.includes('undefined')) {
+                continue;
+            }
+
+            debugLog(`尝试加载音频 URL: ${candidateUrl}`);
             dom.audioPlayer.src = candidateUrl;
             dom.audioPlayer.load();
 
             try {
                 await waitForAudioReady(dom.audioPlayer);
                 
-                // === 检查点 4: 音频加载就绪后 ===
-                if (state.playbackRequestId !== currentRequestId) {
-                    debugLog("播放请求已过期 (waitForAudioReady后)，停止加载");
-                    return;
-                }
+                if (state.playbackRequestId !== currentRequestId) return;
 
                 selectedAudioUrl = candidateUrl;
-                usedFallbackAudio = candidateUrl !== primaryAudioUrl && candidateAudioUrls.length > 1;
+                debugLog(`音频加载成功: ${candidateUrl}`);
                 break;
             } catch (error) {
                 lastAudioError = error;
-                console.warn('音频元数据加载异常', error);
-
-                if (candidateUrl === primaryAudioUrl && candidateAudioUrls.length > 1) {
-                    debugLog('主音频地址加载失败，尝试使用备用地址');
-                }
+                console.warn(`音频地址加载失败: ${candidateUrl}`, error);
             }
         }
 
         if (!selectedAudioUrl) {
-            throw lastAudioError || new Error('音频加载失败');
-        }
-
-        if (usedFallbackAudio) {
-            debugLog(`已回退至备用音频地址: ${selectedAudioUrl}`);
-            showNotification('主音频加载失败，已切换到备用音源', 'warning');
+            throw lastAudioError || new Error('所有音频地址均加载失败');
         }
 
         state.currentAudioUrl = selectedAudioUrl;
 
+        // 恢复进度
         if (state.pendingSeekTime != null) {
             setAudioCurrentTime(state.pendingSeekTime);
             state.pendingSeekTime = null;
         } else {
             setAudioCurrentTime(dom.audioPlayer.currentTime || 0);
         }
-
         state.lastPlaybackTime = state.currentPlaybackTime;
 
         let playPromise = null;
 
         if (autoplay) {
-            // === 检查点 5: 执行播放前 ===
-            if (state.playbackRequestId !== currentRequestId) {
-                debugLog("播放请求已过期 (play前)，取消播放");
-                return;
-            }
+            if (state.playbackRequestId !== currentRequestId) return;
 
-            // 开始加载超时监控
             startLoadTimeoutMonitoring();
             
             playPromise = dom.audioPlayer.play();
+            
             if (playPromise !== undefined) {
                 playPromise.then(() => {
-                    // === 检查点 6: 播放Promise成功后 ===
-                    // 虽然播放成功了，但如果ID变了，说明用户可能刚好点击了暂停，这时应该立即暂停
                     if (state.playbackRequestId !== currentRequestId) {
                         dom.audioPlayer.pause();
                         return;
                     }
-
-                    // 播放成功，停止加载超时监控，开始播放状态监控
                     stopLoadTimeoutMonitoring();
                     startPlaybackMonitoring();
                     
-                    // 更新 Media Session 状态为播放中
                     if ('mediaSession' in navigator) {
                         navigator.mediaSession.playbackState = 'playing';
                         updatePositionState();
                     }
                 }).catch(error => {
-                    // 如果ID变了，由于 play() 被打断(例如 load()被调用)导致的 AbortError 应该被忽略
-                    if (state.playbackRequestId !== currentRequestId) {
-                        return;
-                    }
-
-                    console.error('播放失败:', error);
+                    if (state.playbackRequestId !== currentRequestId) return;
+                    console.error('播放 Promise 失败:', error);
                     stopLoadTimeoutMonitoring();
-                    
-                    // 更新 Media Session 状态为暂停
-                    if ('mediaSession' in navigator) {
-                        navigator.mediaSession.playbackState = 'paused';
-                        updatePositionState();
+                    // 不要立即抛出错误，有些浏览器会在加载中触发 AbortError
+                    if (error.name !== 'AbortError') {
+                        handlePlaybackError(song, error);
                     }
-                    
-                    handlePlaybackError(song, error);
                 });
             } else {
-                playPromise = null;
-                // 如果play()没有返回Promise，我们仍然需要监控
                 startPlaybackMonitoring();
-                
-                // 更新 Media Session 状态
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = 'playing';
-                    updatePositionState();
-                }
             }
         } else {
+            stopLoadTimeoutMonitoring();
             dom.audioPlayer.pause();
             updatePlayPauseButton();
-            stopLoadTimeoutMonitoring();
-            
-            // 更新 Media Session 状态为暂停
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'paused';
-                updatePositionState();
-            }
         }
 
         scheduleDeferredSongAssets(song, playPromise);
-
-        debugLog(`开始播放: ${song.name} @${currentQuality} [${currentSource}]`);
         
-        // 显示当前使用的音质和音源
+        // 通知
         const qualityInfo = QUALITY_LEVELS.find(q => q.value === currentQuality);
-        const sourceInfo = SOURCE_OPTIONS.find(s => s.value === currentSource);
-        if (qualityInfo && sourceInfo && !isRetry) {
-            showNotification(`正在播放: ${song.name} (${qualityInfo.label} - ${sourceInfo.label})`);
+        if (qualityInfo && !isRetry) {
+            showNotification(`正在播放: ${song.name}`);
         }
 
-        // 确保 Media Session 元数据已更新
-        if (typeof updateMediaMetadata === 'function') {
-            updateMediaMetadata();
-        } else if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
+        if (typeof window.__SOLARA_UPDATE_MEDIA_METADATA === 'function') {
             window.__SOLARA_UPDATE_MEDIA_METADATA();
         }
-    } catch (error) {
-        // === 检查点 7: 错误捕获中 ===
-        if (state.playbackRequestId !== currentRequestId) {
-            debugLog("播放请求已过期 (catch块)，忽略错误");
-            return;
-        }
 
-        console.error('播放歌曲失败:', error);
+    } catch (error) {
+        if (state.playbackRequestId !== currentRequestId) return;
+
+        console.error('播放流程严重错误:', error);
         stopLoadTimeoutMonitoring();
-        
-        // 更新 Media Session 状态为暂停
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'paused';
-            updatePositionState();
-        }
-        
         handlePlaybackError(song, error);
     } finally {
         if (state.playbackRequestId === currentRequestId) {
