@@ -327,6 +327,8 @@ body.mobile-view .mobile-turntable__platter {
     overflow: hidden;
     animation: mobile-turntable-spin 18s linear infinite, platterGlow 4s ease-in-out infinite;
     animation-play-state: paused;
+    /* 确保旋转围绕中心点 */
+    transform-origin: center center;
 }
 
 @keyframes platterGlow {
@@ -368,13 +370,17 @@ body.mobile-view .album-cover {
         0 0 40px var(--neon-glow);
     background: rgba(15, 23, 42, 0.5);
     z-index: 2;
-    animation: albumFloat 6s ease-in-out infinite;
+    /* 移除浮动动画，保持固定位置 */
+    /* animation: albumFloat 6s ease-in-out infinite; */
 }
 
+/* 移除albumFloat动画 */
+/*
 @keyframes albumFloat {
     0%, 100% { transform: translate(-50%, -50%) scale(1); }
     50% { transform: translate(-50%, -52%) scale(1.02); }
 }
+*/
 
 body.mobile-view .album-cover img {
     width: 100%;
@@ -412,6 +418,9 @@ body.mobile-view .mobile-inline-lyrics {
     overflow: hidden;
     cursor: pointer;
     border: 1px solid rgba(0, 212, 255, 0.3);
+    /* 确保容器固定位置 */
+    position: relative;
+    transform: none;
 }
 
 body.mobile-view .mobile-inline-lyrics__hint {
@@ -485,7 +494,7 @@ body.mobile-view .mobile-inline-lyrics__content div[data-index] {
     white-space: normal;
 }
 
-/* 美化当前歌词背景 - 改成更柔和的渐变，去掉旋转动画 */
+/* 美化当前歌词背景 - 改成更柔和的渐变，去掉旋转动画和缩放 */
 body.mobile-view .mobile-inline-lyrics__content .current {
     color: #ffffff;
     background: linear-gradient(135deg, 
@@ -500,16 +509,36 @@ body.mobile-view .mobile-inline-lyrics__content .current {
         0 0 90px rgba(0, 212, 255, 0.1),
         inset 0 0 20px rgba(0, 255, 136, 0.1);
     font-weight: 700;
-    transform: scale(1.05);
+    /* 移除缩放，避免布局跳动 */
+    transform: none;
     text-shadow: 
         0 0 10px rgba(0, 212, 255, 0.8),
         0 0 20px rgba(0, 212, 255, 0.5),
         0 2px 4px rgba(0, 0, 0, 0.3);
-    animation: currentLyricsGlow 3s ease-in-out infinite;
+    /* 简化动画，只保留光晕效果 */
+    animation: currentLyricsGlowSimple 3s ease-in-out infinite;
     border: none;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     position: relative;
+}
+
+/* 简化的歌词发光动画，移除缩放 */
+@keyframes currentLyricsGlowSimple {
+    0%, 100% { 
+        box-shadow: 
+            0 0 30px rgba(0, 212, 255, 0.6),
+            0 0 60px rgba(0, 212, 255, 0.3),
+            0 0 90px rgba(0, 212, 255, 0.1),
+            inset 0 0 20px rgba(0, 255, 136, 0.1);
+    }
+    50% { 
+        box-shadow: 
+            0 0 40px rgba(0, 212, 255, 0.8),
+            0 0 80px rgba(0, 212, 255, 0.4),
+            0 0 120px rgba(0, 212, 255, 0.15),
+            inset 0 0 25px rgba(0, 255, 136, 0.15);
+    }
 }
 
 /* 移除旋转动画，改为静态光晕效果 */
@@ -567,6 +596,11 @@ body.mobile-view .current-song-info {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* 修复：确保容器高度稳定 */
+    min-height: auto;
+    max-height: none;
+    transform: none;
+    position: relative;
 }
 
 body.mobile-view .current-song-title {
@@ -576,27 +610,57 @@ body.mobile-view .current-song-title {
     letter-spacing: 0.03em;
     line-height: 1.3;
     text-shadow: 0 2px 8px rgba(0, 212, 255, 0.2);
-    animation: titleSlide 8s ease-in-out infinite;
+    /* 修复：移除导致布局变化的动画 */
+    /* animation: titleSlide 8s ease-in-out infinite; */
+    /* 改为只改变文字阴影，不影响布局 */
+    animation: titleGlowFixed 8s ease-in-out infinite;
 }
 
+/* 修复：只改变文字阴影，不影响布局 */
+@keyframes titleGlowFixed {
+    0%, 100% { text-shadow: 0 2px 8px rgba(0, 212, 255, 0.2); }
+    50% { text-shadow: 0 2px 12px rgba(0, 212, 255, 0.4); }
+}
+
+/* 移除原来的titleSlide动画 */
+/*
 @keyframes titleSlide {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-2px); }
     75% { transform: translateX(2px); }
 }
+*/
 
 body.mobile-view .current-song-artist {
     font-size: 0.92rem;
     color: var(--text-secondary);
     letter-spacing: 0.02em;
     font-weight: 500;
-    animation: artistFade 4s ease-in-out infinite;
+    /* 修复：移除导致布局变化的动画 */
+    /* animation: artistFade 4s ease-in-out infinite; */
+    /* 改为只改变文字阴影，不影响布局 */
+    animation: artistGlowFixed 4s ease-in-out infinite;
 }
 
+/* 修复：只改变文字阴影，不影响布局 */
+@keyframes artistGlowFixed {
+    0%, 100% { 
+        opacity: 0.8;
+        text-shadow: none;
+    }
+    50% { 
+        opacity: 1;
+        text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+    }
+}
+
+/* 移除原来的artistFade动画 */
+/*
 @keyframes artistFade {
     0%, 100% { opacity: 0.8; }
     50% { opacity: 1; }
 }
+*/
 
 body.mobile-view .mobile-quality-chip {
     display: inline-flex;
@@ -611,12 +675,17 @@ body.mobile-view .mobile-quality-chip {
     font-size: 0.85rem;
     font-weight: 500;
     letter-spacing: 0.04em;
+    /* 修复：固定margin，避免动态变化 */
     margin: 8px auto 0;
     cursor: pointer;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 4px 20px rgba(0, 212, 255, 0.2);
     position: relative;
     overflow: hidden;
+    /* 修复：确保容器高度稳定 */
+    min-height: auto;
+    max-height: none;
+    transform: none;
 }
 
 body.mobile-view .mobile-quality-chip::before {
@@ -639,13 +708,25 @@ body.mobile-view .mobile-quality-chip:hover::before {
 body.mobile-view .mobile-quality-chip i {
     font-size: 0.75rem;
     opacity: 0.85;
-    animation: chipIconPulse 2s ease-in-out infinite;
+    /* 修复：移除可能导致布局变化的动画 */
+    /* animation: chipIconPulse 2s ease-in-out infinite; */
+    /* 改为只改变透明度，不影响布局 */
+    animation: chipIconGlowFixed 2s ease-in-out infinite;
 }
 
+/* 修复：只改变透明度，不影响布局 */
+@keyframes chipIconGlowFixed {
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 1; }
+}
+
+/* 移除原来的chipIconPulse动画 */
+/*
 @keyframes chipIconPulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.1); }
 }
+*/
 
 body.mobile-view .mobile-quality-chip:focus-visible,
 body.mobile-view .mobile-quality-chip:hover {
@@ -653,22 +734,37 @@ body.mobile-view .mobile-quality-chip:hover {
     border-color: rgba(0, 212, 255, 0.5);
     color: var(--primary-light);
     box-shadow: 0 0 30px var(--neon-glow), 0 8px 30px rgba(0, 212, 255, 0.3);
-    transform: translateY(-3px) scale(1.05);
+    /* 修复：移除transform，避免布局变化 */
+    /* transform: translateY(-3px) scale(1.05); */
+    /* 改为只改变阴影 */
+    transform: translateY(-3px);
 }
 
 body.mobile-view .mobile-quality-chip.active {
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     border-color: transparent;
     color: #ffffff;
-    transform: translateY(-3px) scale(1.05);
+    /* 修复：移除transform，避免布局变化 */
+    /* transform: translateY(-3px) scale(1.05); */
+    /* 改为只改变阴影和位移 */
+    transform: translateY(-3px);
     box-shadow: 0 0 40px var(--neon-glow), 0 10px 30px rgba(0, 212, 255, 0.4);
-    animation: chipActive 2s ease-in-out infinite;
+    animation: chipActiveFixed 2s ease-in-out infinite;
 }
 
+/* 修复：只改变阴影，不改变transform */
+@keyframes chipActiveFixed {
+    0%, 100% { box-shadow: 0 0 40px var(--neon-glow), 0 10px 30px rgba(0, 212, 255, 0.4); }
+    50% { box-shadow: 0 0 60px var(--neon-glow), 0 15px 40px rgba(0, 212, 255, 0.5); }
+}
+
+/* 移除原来的chipActive动画 */
+/*
 @keyframes chipActive {
     0%, 100% { box-shadow: 0 0 40px var(--neon-glow), 0 10px 30px rgba(0, 212, 255, 0.4); }
     50% { box-shadow: 0 0 60px var(--neon-glow), 0 15px 40px rgba(0, 212, 255, 0.5); }
 }
+*/
 
 body.mobile-view .controls {
     background: transparent;
@@ -678,7 +774,8 @@ body.mobile-view .controls {
     padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
     gap: 16px;
     align-items: stretch;
-    margin-top: auto;
+    /* 修复：移除margin-top: auto，避免与上方产生缝隙 */
+    margin-top: 0;
     position: relative;
     z-index: 10;
 }
@@ -695,6 +792,11 @@ body.mobile-view .progress-container {
     row-gap: 8px;
     column-gap: 10px;
     align-items: center;
+    /* 修复：移除可能产生缝隙的样式 */
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
 }
 
 body.mobile-view .progress-container input[type="range"] {
@@ -706,6 +808,9 @@ body.mobile-view .progress-container input[type="range"] {
     background: rgba(0, 212, 255, 0.2);
     box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
     animation: progressGlow 4s ease-in-out infinite;
+    /* 修复：确保进度条没有多余的边框或阴影 */
+    border: none;
+    outline: none;
 }
 
 @keyframes progressGlow {
@@ -723,6 +828,8 @@ body.mobile-view .progress-container input[type="range"]::-webkit-slider-thumb {
     box-shadow: 0 0 15px var(--neon-glow), 0 4px 10px rgba(0, 0, 0, 0.3);
     transition: all 0.3s ease;
     animation: thumbPulse 2s ease-in-out infinite;
+    border: none;
+    outline: none;
 }
 
 @keyframes thumbPulse {
@@ -764,6 +871,9 @@ body.mobile-view .transport-controls {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    /* 修复：确保没有多余的间距 */
+    margin: 0;
+    padding: 0;
 }
 
 body.mobile-view .transport-button {
@@ -1242,7 +1352,7 @@ body.mobile-view .lyrics-content div[data-index] {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 美化歌词面板当前歌词背景 - 去掉旋转动画 */
+/* 美化歌词面板当前歌词背景 - 去掉旋转动画和缩放 */
 body.mobile-view .lyrics-content .current {
     white-space: normal !important;
     word-wrap: break-word !important;
@@ -1269,8 +1379,10 @@ body.mobile-view .lyrics-content .current {
         0 0 10px rgba(0, 212, 255, 0.8),
         0 0 20px rgba(0, 212, 255, 0.5),
         0 2px 4px rgba(0, 0, 0, 0.3);
-    transform: scale(1.05);
-    animation: currentLyricsGlow 3s ease-in-out infinite;
+    /* 移除缩放，避免布局跳动 */
+    transform: none;
+    /* 简化动画，只保留光晕效果 */
+    animation: currentLyricsGlowSimple 3s ease-in-out infinite;
     border: none;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1684,25 +1796,4 @@ body.mobile-view .mobile-inline-lyrics {
     max-height: 85vh !important;
 }
 
-/* 更新当前歌词发光动画 */
-@keyframes currentLyricsGlow {
-    0%, 100% { 
-        box-shadow: 
-            0 0 30px rgba(0, 212, 255, 0.6),
-            0 0 60px rgba(0, 212, 255, 0.3),
-            0 0 90px rgba(0, 212, 255, 0.1),
-            inset 0 0 20px rgba(0, 255, 136, 0.1);
-        transform: scale(1.05);
-    }
-    50% { 
-        box-shadow: 
-            0 0 40px rgba(0, 212, 255, 0.8),
-            0 0 80px rgba(0, 212, 255, 0.4),
-            0 0 120px rgba(0, 212, 255, 0.15),
-            inset 0 0 25px rgba(0, 255, 136, 0.15);
-        transform: scale(1.08);
-    }
-}
-
-/* 移除边框旋转动画 */
-/* @keyframes lyricsBorderRotate 已删除 */
+/* 移除原来的currentLyricsGlow动画，使用简化版 */
