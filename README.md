@@ -52,10 +52,17 @@ const BLOCKED_KEYWORDS = [
 6. 搜索结果界面添加了播放全部按钮，可以一键播放页面已加载的所有歌曲。
 7. 添加密码验证，只有输入密码登录才能使用。
 8. 移动端页面风格改了下，添加了播放列表自动定位到正在播放的歌曲。如果不喜欢这个风格或者有其他问题，请自己修改mobile.css文件。
-<img width="1482" height="899" alt="ScreenShot_2025-11-12_191402_577" src="https://github.com/user-attachments/assets/5f6b5d5c-7ec6-45a4-a1f5-c58567b4b99e" />
-<img width="300" alt="Screenshot 1" src="https://github.com/user-attachments/assets/0ac29c4f-0c62-4b2c-88e3-dc86a30658a2" />
-<img width="300" alt="Screenshot 2" src="https://github.com/user-attachments/assets/8ecf917d-35c3-43d2-8c3f-ee55dab6d120" />
-<img width="300" alt="Screenshot 3" src="https://github.com/user-attachments/assets/c643a852-406d-40cc-bf66-1c4fbbd2200d" />
+### 💻 桌面端页面截图
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/5f6b5d5c-7ec6-45a4-a1f5-c58567b4b99e" alt="Desktop Screenshot" width="90%">
+</p>
+### 📱 移动端页面截图
+<p align="center">
+   <img src="https://github.com/user-attachments/assets/7ca86a1b-3120-43ac-acf6-f782fc4f4db0" alt="Mobile Screenshot 4" width="22%">
+   <img src="https://github.com/user-attachments/assets/21a5b03e-cda1-4004-987f-d5a7c026a886" alt="Mobile Screenshot 3" width="22%">
+   <img src="https://github.com/user-attachments/assets/8c5b9e0a-a6fd-4b59-9949-b7b658f3d2e0" alt="Mobile Screenshot 2" width="22%"> 
+   <img src="https://github.com/user-attachments/assets/48db7dcd-b9e6-4228-a38a-dbc15cd9731b" alt="Mobile Screenshot 1" width="22%">
+</p>
 
 
 部署完可以使用自己的域名反向代理 http://127.0.0.1:3001
