@@ -6,13 +6,6 @@ const API_BASE_URL = "https://music-api.gdstudio.xyz/api.php";
 const KUWO_HOST_PATTERN = /(^|\.)kuwo\.cn$/i;
 const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control", "accept-ranges", "content-length", "content-range", "etag", "last-modified", "expires"];
 
-// 增加重试配置
-const FETCH_CONFIG = {
-  timeout: 15000, // 15秒超时
-  retryCount: 2,  // 重试2次
-  retryDelay: 1000 // 重试间隔1秒
-};
-
 // CORS 头函数
 const createCorsHeaders = (init = {}) => {
   const headers = {
@@ -53,28 +46,6 @@ function normalizeKuwoUrl(rawUrl) {
   }
 }
 
-// 带重试的 fetch 函数
-async function fetchWithRetry(url, options, retries = FETCH_CONFIG.retryCount) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_CONFIG.timeout);
-      
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      return response;
-    } catch (error) {
-      if (i === retries) throw error;
-      console.log(`请求失败，${FETCH_CONFIG.retryDelay}ms后重试 (${i + 1}/${retries})...`);
-      await new Promise(resolve => setTimeout(resolve, FETCH_CONFIG.retryDelay));
-    }
-  }
-}
-
 async function proxyKuwoAudio(targetUrl, req, res) {
   const normalized = normalizeKuwoUrl(targetUrl);
   if (!normalized) {
@@ -96,7 +67,7 @@ async function proxyKuwoAudio(targetUrl, req, res) {
   }
 
   try {
-    const upstream = await fetchWithRetry(normalized.toString(), init);
+    const upstream = await fetch(normalized.toString(), init);
     
     const headers = createCorsHeaders();
     SAFE_RESPONSE_HEADERS.forEach(header => {
@@ -114,9 +85,9 @@ async function proxyKuwoAudio(targetUrl, req, res) {
     // 将响应流直接传输给客户端
     upstream.body.pipe(res);
   } catch (error) {
-    console.error('Proxy error:', error.message);
+    console.error('Proxy error:', error);
     res.set(createCorsHeaders());
-    res.status(500).send('Proxy error: ' + error.message);
+    res.status(500).send('Proxy error');
   }
 }
 
@@ -134,28 +105,18 @@ async function proxyApiRequest(req, res) {
     return res.status(400).send('Missing types');
   }
 
-  // 记录请求信息用于调试
-  console.log('API Request:', {
-    url: apiUrl.toString(),
-    params: Object.fromEntries(apiUrl.searchParams)
-  });
-
   try {
-    const upstream = await fetchWithRetry(apiUrl.toString(), {
+    const upstream = await fetch(apiUrl.toString(), {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
         'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive'
       },
     });
 
-    const headers = createCorsHeaders({
-      'Content-Type': 'application/json; charset=utf-8'
-    });
-
-    // 添加一些缓存头，减少重复请求
-    headers['Cache-Control'] = 'public, max-age=300'; // 5分钟缓存
+    const headers = createCorsHeaders();
+    if (!headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json; charset=utf-8';
+    }
 
     res.set(headers);
     res.status(upstream.status);
@@ -163,19 +124,9 @@ async function proxyApiRequest(req, res) {
     const data = await upstream.text();
     res.send(data);
   } catch (error) {
-    console.error('API proxy error:', error.message);
-    console.error('Error details:', {
-      code: error.code,
-      errno: error.errno,
-      type: error.type
-    });
-    
+    console.error('API proxy error:', error);
     res.set(createCorsHeaders());
-    res.status(502).json({
-      error: '网关错误',
-      message: '无法连接到音乐API服务器',
-      details: error.message
-    });
+    res.status(500).send('API proxy error');
   }
 }
 
