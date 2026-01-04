@@ -541,10 +541,8 @@ const SOURCE_OPTIONS = [
 // 备选关键词列表
 const RADAR_KEYWORDS = [
     // 歌曲风格
-    "流行", "摇滚", "民谣", "电子", "说唱", "R&B", "爵士", "蓝调",
-    "Blues", "Rock & Roll", "Hard Core",
-    "Funk", "Soul Music", "Bossa Nova", "R&B", "Rap", "拉丁",
-    "Indie", "金属", "朋克", "工业摇滚", 
+    "流行", "摇滚", "民谣", "电子", "说唱", "R&B", 
+    "Blues", "Rock & Roll", "Bossa Nova", "Rap", 
     "Trap", "Future Bass", "Dubstep", "Techno", "House", "Progressive House", "Trance", "Ambient",
     "New Wave", "Synthwave", "Post-Punk", "Gothic", "Folk Rock", "Post-Rock", "Hardstyle", "J-Pop", "K-Pop",
     "Reggaeton", "Tropical House", "Soul", "Chillwave", "Vaporwave", "Lo-fi Hip Hop", "Disco", "Folk", "Psychedelic",
@@ -572,30 +570,9 @@ const RADAR_KEYWORDS = [
     "Michael Jackson", "Elton John", "Madonna", "Whitney Houston",
     "Celine Dion", "BTS", "BLACKPINK", "EXO", "TWICE", "BIGBANG", "SEVENTEEN",
     "NCT", "Stray Kids", "Red Velvet", "MONSTA X", "Aespa",
-
-    // 国内知名乐队（包含活跃和已解散的）
-    "五月天", "苏打绿", "鱼丁糸", "草东没有派对", 
-    "新裤子", "痛仰", "反光镜", "逃跑计划",
-    "万能青年旅店", "二手玫瑰", "黑豹", "唐朝",
-    "Beyond", "花儿乐队", "F.I.R.飞儿乐团", "S.H.E",
-    "凤凰传奇", "牛奶咖啡", "GALA", "后海大鲨鱼",
-    "海龟先生", "刺猬", "Joyside", "重塑雕像的权利",
-    "声音碎片", "达达乐队", "木马", "低苦艾",
-    "顶楼的马戏团", "C-BLOCK", "Higher Brothers", "落日飞车",
-    "告五人", "Deca Joins", "椅子乐团", "傻子与白痴",
-    "康姆士", "岛屿心情", "对角巷", "白日密语",
-    "回春丹", "Schoolgirl byebye", "Chinese Football", "C.S.B.Q",
-    "ETA乐队", "表情银行", "缺省", "海朋森",
-    "野外合作社", "闪星", "Life Awaits", "郁乐队",
     
     // 补充的热门已解散乐队
     "小虎队", "飞轮海", "信乐团", "水木年华",
-    "无印良品", "羽泉", "零点乐队", "鲍家街43号",
-    "轮回乐队", "超载乐队", "面孔乐队", "指南针乐队",
-    "眼镜蛇乐队", "地下婴儿", "新裤子", "脑浊",
-    "挂在盒子上", "生命之饼", "AK-47", "夜叉",
-    "扭曲的机器", "T9", "皇冠", "窒息",
-    "战斧", "春秋", "冥界", "施教日",
 
     // 国际知名乐队（热门/经典/已解散）
     "The Beatles", "Queen", "The Rolling Stones", "Nirvana", "Led Zeppelin", "Pink Floyd",
@@ -5241,6 +5218,7 @@ async function autoPlayNext() {
 
 
 // 检查并自动添加雷达歌曲
+// 修复 checkAndAutoAddRadarSongs 函数，确保合并两个关键词的结果
 async function checkAndAutoAddRadarSongs() {
     if (state.currentPlaylist !== "playlist" || state.playlistSongs.length === 0) {
         return;
@@ -5251,32 +5229,56 @@ async function checkAndAutoAddRadarSongs() {
         debugLog(`播放列表即将结束，剩余 ${remainingSongs} 首歌曲，自动添加雷达歌曲`);
         
         try {
+            // 从备选关键词中随机选择两个不同的关键词
             const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
             const keyword1 = shuffledKeywords[0];
-            const keyword2 = shuffledKeywords[1];
+            let keyword2 = shuffledKeywords[1];
+            
+            // 确保两个关键词不同
+            if (keyword1 === keyword2 && shuffledKeywords.length > 2) {
+                keyword2 = shuffledKeywords[2];
+            }
             
             const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
             state.radarOffset = randomOffset;
             
-            debugLog(`自动添加雷达歌曲，使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
+            debugLog(`自动添加雷达歌曲，使用关键词: "${keyword1}" 和 "${keyword2}", 随机偏移量: ${randomOffset}`);
 
+            // 使用两个关键词分别搜索
             const [results1, results2] = await Promise.all([
-		    API.search(keyword1, "netease", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
-		    API.search(keyword2, "netease", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
-		]);
+                API.search(keyword1, "netease", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
+                API.search(keyword2, "netease", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
+            ]);
 
-            const allResults = [...(results1 || []), ...(results2 || [])];
-            const uniqueResults = allResults.filter((song, index, self) => 
-                index === self.findIndex(s => 
-                    s.id === song.id && s.source === song.source
-                )
-            );
+            // 合并两个搜索结果
+            const allResults = [];
+            if (Array.isArray(results1) && results1.length > 0) {
+                allResults.push(...results1);
+            }
+            if (Array.isArray(results2) && results2.length > 0) {
+                allResults.push(...results2);
+            }
 
-            // 新增：应用屏蔽关键词过滤
+            // 去重搜索结果
+            const uniqueResults = [];
+            const seenKeys = new Set();
+            
+            for (const song of allResults) {
+                if (!song || !song.id) continue;
+                const key = `${song.source || 'netease'}:${song.id}`;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    uniqueResults.push(song);
+                }
+            }
+
+            console.log(`自动添加雷达: 关键词1 "${keyword1}" -> ${results1?.length || 0} 首, 关键词2 "${keyword2}" -> ${results2?.length || 0} 首`);
+            console.log(`自动添加雷达合并: 原始 ${allResults.length} 首 -> 去重后 ${uniqueResults.length} 首`);
+
+            // 应用屏蔽关键词过滤
             const filteredResults = filterBlockedSongs(uniqueResults);
-            debugLog(`自动添加雷达过滤结果: 原始 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
+            console.log(`自动添加雷达过滤: 去重后 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
 
-            // 位置 3：修改这里 - 使用 filteredResults 判断
             if (filteredResults.length > 0) {
                 const existingKeys = new Set(
                     state.playlistSongs
@@ -5285,7 +5287,6 @@ async function checkAndAutoAddRadarSongs() {
                 );
 
                 const uniqueSongs = [];
-                // 这里已经是使用 filteredResults 循环了
                 for (const song of filteredResults) {
                     const key = getSongKey(song);
                     if (!key || !existingKeys.has(key)) {
@@ -5303,9 +5304,17 @@ async function checkAndAutoAddRadarSongs() {
                     state.playlistSongs = [...state.playlistSongs, ...songsToAdd];
                     renderPlaylist();
                     
-                    const filteredCount = uniqueResults.length - filteredResults.length;
-                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲, 过滤 ${filteredCount} 首 (关键词: ${keyword1}, ${keyword2}, 随机偏移量: ${randomOffset})`);
-                    showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲${filteredCount > 0 ? ` (过滤 ${filteredCount} 首)` : ''}`);
+                    const totalFiltered = uniqueResults.length - filteredResults.length;
+                    const existingFiltered = filteredResults.length - uniqueSongs.length;
+                    
+                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲`);
+                    debugLog(`  过滤: 屏蔽关键词 ${totalFiltered} 首, 播放列表已有 ${existingFiltered} 首`);
+                    debugLog(`  关键词: ${keyword1}, ${keyword2}, 随机偏移量: ${randomOffset}`);
+                    
+                    console.log(`自动添加雷达成功: 添加 ${songsToAdd.length} 首歌曲`);
+                    console.log(`  过滤: 屏蔽关键词 ${totalFiltered} 首, 播放列表已有 ${existingFiltered} 首`);
+                    
+                    showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲`);
                 }
             }
         } catch (error) {
@@ -5459,6 +5468,7 @@ function updateOnlineHighlight() {
 }
 
 // 修复：探索在线音乐 - 使用随机关键词和酷我音源，添加动态偏移量
+// 修复 exploreOnlineMusic 函数，确保两个关键词的结果都正确合并
 async function exploreOnlineMusic() {
     const btn = dom.loadOnlineBtn;
     const btnText = btn.querySelector(".btn-text");
@@ -5472,33 +5482,64 @@ async function exploreOnlineMusic() {
         // 从备选关键词中随机选择两个不同的关键词
         const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
         const keyword1 = shuffledKeywords[0];
-        const keyword2 = shuffledKeywords[1];
+        let keyword2 = shuffledKeywords[1];
         
-        // 使用随机偏移量
+        // 确保两个关键词不同（如果相同，取下一个）
+        if (keyword1 === keyword2 && shuffledKeywords.length > 2) {
+            keyword2 = shuffledKeywords[2];
+        }
+        
+        // 使用随机偏移量，确保两个搜索的偏移量不同
         const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
         state.radarOffset = randomOffset;
         
-        debugLog(`探索雷达使用关键词: ${keyword1} 和 ${keyword2}, 随机偏移量: ${randomOffset}`);
+        debugLog(`探索雷达使用关键词: "${keyword1}" 和 "${keyword2}", 随机偏移量: ${randomOffset}`);
+        console.log(`探索雷达: 关键词1="${keyword1}", 关键词2="${keyword2}", 偏移量=${randomOffset}`);
 
-        // 使用两个关键词分别搜索
+        // 使用两个关键词分别搜索，使用不同的页码以确保结果多样性
         const [results1, results2] = await Promise.all([
-		    API.search(keyword1, "netease", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
-		    API.search(keyword2, "netease", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
-		]);
+            API.search(keyword1, "netease", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(error => {
+                console.error(`关键词 "${keyword1}" 搜索失败:`, error);
+                return [];
+            }),
+            API.search(keyword2, "netease", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(error => {
+                console.error(`关键词 "${keyword2}" 搜索失败:`, error);
+                return [];
+            })
+        ]);
 
-        // 合并并去重搜索结果
-        const allResults = [...(results1 || []), ...(results2 || [])];
-        const uniqueResults = allResults.filter((song, index, self) => 
-            index === self.findIndex(s => 
-                s.id === song.id && s.source === song.source
-            )
-        );
+        // 检查两个搜索的结果
+        console.log(`探索雷达结果: 关键词1 "${keyword1}" -> ${results1?.length || 0} 首, 关键词2 "${keyword2}" -> ${results2?.length || 0} 首`);
 
-        // 新增：应用屏蔽关键词过滤
+        // 合并两个搜索结果
+        const allResults = [];
+        if (Array.isArray(results1) && results1.length > 0) {
+            allResults.push(...results1);
+        }
+        if (Array.isArray(results2) && results2.length > 0) {
+            allResults.push(...results2);
+        }
+
+        // 去重搜索结果（按ID和来源去重）
+        const uniqueResults = [];
+        const seenKeys = new Set();
+        
+        for (const song of allResults) {
+            if (!song || !song.id) continue;
+            const key = `${song.source || 'netease'}:${song.id}`;
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                uniqueResults.push(song);
+            }
+        }
+
+        console.log(`探索雷达合并结果: 原始 ${allResults.length} 首 -> 去重后 ${uniqueResults.length} 首`);
+
+        // 应用屏蔽关键词过滤
         const filteredResults = filterBlockedSongs(uniqueResults);
-        debugLog(`探索雷达过滤结果: 原始 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
+        console.log(`探索雷达过滤结果: 去重后 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
+        debugLog(`探索雷达过滤结果: 原始 ${allResults.length} 首 -> 去重后 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
 
-        // 位置 1：修改这里 - 使用 filteredResults 判断
         if (filteredResults.length > 0) {
             // 去重处理（与现有播放列表比较）
             const existingKeys = new Set(
@@ -5508,7 +5549,6 @@ async function exploreOnlineMusic() {
             );
 
             const uniqueSongs = [];
-            // 位置 2：修改这里 - 使用 filteredResults 循环
             for (const song of filteredResults) {
                 const key = getSongKey(song);
                 if (!key || !existingKeys.has(key)) {
@@ -5518,6 +5558,8 @@ async function exploreOnlineMusic() {
                     }
                 }
             }
+
+            console.log(`探索雷达去重: 过滤后 ${filteredResults.length} 首 -> 相对于播放列表去重后 ${uniqueSongs.length} 首`);
 
             // 随机打乱歌曲顺序
             const shuffledSongs = [...uniqueSongs].sort(() => Math.random() - 0.5);
@@ -5532,10 +5574,16 @@ async function exploreOnlineMusic() {
                 // 更新播放列表显示
                 renderPlaylist();
 
-                const filteredCount = uniqueResults.length - filteredResults.length;
-                const filterMessage = filteredCount > 0 ? ` (已过滤 ${filteredCount} 首)` : '';
-                showNotification(`探索雷达: 已添加 ${songsToAdd.length} 首歌曲${filterMessage} (关键词: ${keyword1}, ${keyword2})`);
-                debugLog(`探索雷达成功: 关键词 "${keyword1}", "${keyword2}", 随机偏移量 ${randomOffset}, 添加 ${songsToAdd.length} 首歌曲, 过滤 ${filteredCount} 首`);
+                const totalFiltered = uniqueResults.length - filteredResults.length;
+                const existingFiltered = filteredResults.length - uniqueSongs.length;
+                const filterMessage = totalFiltered + existingFiltered > 0 ? 
+                    ` (过滤 ${totalFiltered} 首, 播放列表已有 ${existingFiltered} 首)` : '';
+                
+                showNotification(`探索雷达: 已添加 ${songsToAdd.length} 首歌曲${filterMessage}`, "success");
+                console.log(`探索雷达成功: 关键词 "${keyword1}", "${keyword2}", 偏移量 ${randomOffset}`);
+                console.log(`  添加 ${songsToAdd.length} 首歌曲`);
+                console.log(`  过滤: 屏蔽关键词 ${totalFiltered} 首, 播放列表已有 ${existingFiltered} 首`);
+                debugLog(`探索雷达成功: 关键词 "${keyword1}", "${keyword2}", 随机偏移量 ${randomOffset}, 添加 ${songsToAdd.length} 首歌曲`);
 
                 // 自动播放第一首新添加的歌曲
                 if (songsToAdd.length > 0) {
@@ -5545,9 +5593,11 @@ async function exploreOnlineMusic() {
                     await playPlaylistSong(newIndex);
                 }
             } else {
-                showNotification("探索雷达: 没有找到新的歌曲", "warning");
+                console.log("探索雷达: 所有歌曲都已存在于播放列表中");
+                showNotification("探索雷达: 所有歌曲都已存在于播放列表中", "warning");
             }
         } else {
+            console.log("探索雷达: 未找到相关歌曲或所有结果已被过滤");
             showNotification("探索雷达: 未找到相关歌曲或所有结果已被过滤", "error");
         }
     } catch (error) {
