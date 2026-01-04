@@ -906,7 +906,7 @@ body.mobile-view .playlist-items {
 }
 
 body.mobile-view .playlist-items .playlist-item {
-    padding: 14px 90px 14px 18px;
+    padding: 14px 90px 14px 18px; /* 右侧留足空间给按钮 */
     white-space: normal;
     line-height: 1.4;
     min-height: 0;
@@ -917,7 +917,8 @@ body.mobile-view .playlist-items .playlist-item {
     touch-action: manipulation;
     cursor: pointer;
     pointer-events: auto;
-    position: relative;
+    position: relative; /* 确保子元素绝对定位以此为基准 */
+    overflow: visible; /* 确保按钮不溢出时不可见 */
     transition: all 0.2s ease;
     border: 1px solid transparent;
 }
@@ -938,23 +939,27 @@ body.mobile-view .playlist-items .playlist-item.current {
     font-weight: 500;
 }
 
+/* 下载按钮 - 强制显示 */
 body.mobile-view .playlist-items .playlist-item .playlist-item-download {
     position: absolute;
-    right: 52px;
+    right: 52px; /* 调整位置以适应新的布局 */
     top: 50%;
     transform: translateY(-50%);
     width: 32px;
     height: 32px;
     border-radius: 10px;
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(30, 41, 59, 0.9); /* 深色背景确保可见 */
+    border: 1px solid rgba(56, 189, 248, 0.3);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     color: var(--primary-color);
     font-size: 0.85rem;
     transition: all 0.2s ease;
-    z-index: 2;
+    z-index: 10 !important;
+    opacity: 1 !important; /* 强制不透明 */
+    visibility: visible !important; /* 强制可见 */
+    pointer-events: auto !important; /* 允许点击 */
 }
 
 body.mobile-view .playlist-items .playlist-item .playlist-item-download:hover,
@@ -964,19 +969,32 @@ body.mobile-view .playlist-items .playlist-item .playlist-item-download:focus {
     transform: translateY(-50%) scale(1.1);
 }
 
+/* 删除按钮 - 强制显示 */
 body.mobile-view .playlist-items .playlist-item .playlist-item-remove {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
     width: 32px;
     height: 32px;
     border-radius: 10px;
-    right: 14px;
     background: rgba(255, 255, 255, 0.05);
     border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: var(--text-muted);
+    transition: all 0.2s ease;
+    z-index: 10 !important;
+    opacity: 1 !important; /* 强制不透明 */
+    visibility: visible !important; /* 强制可见 */
+    pointer-events: auto !important; /* 允许点击 */
 }
 
 body.mobile-view .playlist-items .playlist-item .playlist-item-remove:hover {
     color: #ef4444; /* 红色删除按钮 */
     background: rgba(239, 68, 68, 0.1);
+    transform: translateY(-50%) scale(1.1);
 }
 
 body.mobile-view .lyrics {
