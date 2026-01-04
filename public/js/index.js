@@ -3997,6 +3997,20 @@ function createLoadMoreButton() {
     return button;
 }
 
+function ensureLoadMoreButtonAtBottom() {
+    const container = dom.searchResultsList || dom.searchResults;
+    if (!container) return;
+    
+    const loadMoreBtn = document.getElementById("loadMoreBtn");
+    if (loadMoreBtn) {
+        // 确保按钮在容器末尾
+        if (loadMoreBtn.parentNode === container && loadMoreBtn !== container.lastChild) {
+            container.appendChild(loadMoreBtn);
+            debugLog("已将加载更多按钮移动到容器末尾");
+        }
+    }
+}
+
 function displaySearchResults(newItems, options = {}) {
     const container = dom.searchResultsList || dom.searchResults;
     if (!container) {
@@ -4062,6 +4076,8 @@ function displaySearchResults(newItems, options = {}) {
     const appendedCount = itemsToAppend.length;
     const totalRendered = state.renderedSearchCount;
     debugLog(`显示搜索结果: 新增 ${appendedCount} 个结果, 总计 ${totalRendered} 个, 是否有更多结果: ${state.hasMoreResults ? "是" : "否"}`);
+	// 确保加载按钮在底部
+    setTimeout(ensureLoadMoreButtonAtBottom, 0);
 }
 // 播放全部搜索结果
 async function playAllSearchResults() {
