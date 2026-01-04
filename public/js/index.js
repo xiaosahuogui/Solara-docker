@@ -1971,7 +1971,6 @@ function handleTimeUpdate() {
         state.lastSavedPlaybackTime = currentTime;
         safeSetLocalStorage("currentPlaybackTime", currentTime.toFixed(1));
     }
-
 }
 
 function handleLoadedMetadata() {
@@ -2052,10 +2051,11 @@ async function togglePlayPause() {
 
     if (!dom.audioPlayer.src) {
         try {
+            // 重新开始播放时，保留之前的进度
             await playSong(state.currentSong, {
                 autoplay: true,
                 startTime: state.currentPlaybackTime,
-                preserveProgress: true,
+                preserveProgress: true,  // 保留进度
             });
         } catch (error) {
             console.error("恢复播放失败:", error);
@@ -2079,7 +2079,7 @@ async function togglePlayPause() {
             });
         }
     } else {
-        // 关键：用户主动暂停时，增加 ID，防止正在进行的加载操作在未来自动触发播放
+        // 用户主动暂停时，增加 ID，防止正在进行的加载操作在未来自动触发播放
         state.playbackRequestId++;
         
         dom.audioPlayer.pause();
@@ -2091,7 +2091,6 @@ async function togglePlayPause() {
         }
     }
 }
-
 function buildSourceMenu() {
     if (!dom.sourceMenu) return;
     const optionsHtml = SOURCE_OPTIONS.map(option => {
@@ -2704,10 +2703,11 @@ async function reloadCurrentSong() {
 async function restoreCurrentSongState() {
     if (!state.currentSong) return;
     try {
+        // 恢复时保留上次的播放进度
         await playSong(state.currentSong, {
             autoplay: false,
             startTime: state.currentPlaybackTime,
-            preserveProgress: true,
+            preserveProgress: true,  // 保留进度
         });
         dom.audioPlayer.pause();
         updatePlayPauseButton();
@@ -4208,6 +4208,10 @@ async function playSearchResult(index) {
         // 检查歌曲是否已在播放列表中
         const existingIndex = state.playlistSongs.findIndex(s => s.id === song.id && s.source === song.source);
 
+        const isSameSong = state.currentSong && 
+                          state.currentSong.id === song.id && 
+                          state.currentSong.source === song.source;
+
         if (existingIndex !== -1) {
             // 如果歌曲已存在，直接播放
             state.currentTrackIndex = existingIndex;
@@ -4222,8 +4226,13 @@ async function playSearchResult(index) {
         // 更新播放列表显示
         renderPlaylist();
 
-        // 播放歌曲
-        await playSong(song);
+        // 播放歌曲，如果是同一首歌保留进度，否则从0开始
+        await playSong(song, {
+            autoplay: true,
+            startTime: isSameSong ? state.currentPlaybackTime : 0,
+            preserveProgress: isSameSong,
+            isRetry: false
+        });
 
         showNotification(`正在播放: ${song.name}`);
 
@@ -4691,16 +4700,27 @@ async function playPlaylistSong(index) {
     if (index < 0 || index >= state.playlistSongs.length) return;
 
     const song = state.playlistSongs[index];
+    const isSameSong = state.currentSong && 
+                      state.currentSong.id === song.id && 
+                      state.currentSong.source === song.source;
+    
     state.currentTrackIndex = index;
     state.currentPlaylist = "playlist";
 
     try {
-        await playSong(song);
+        // 如果是同一首歌，保留进度；如果是新歌，从0开始
+        await playSong(song, {
+            autoplay: true,
+            startTime: isSameSong ? state.currentPlaybackTime : 0,
+            preserveProgress: isSameSong, // 同一首歌保留进度
+            isRetry: false
+        });
+        
         updatePlaylistHighlight();
-        // 播放后自动滚动到当前歌曲
         setTimeout(() => {
             scrollToCurrentPlaylistItem();
         }, 300);
+        
         if (isMobileView) {
             closeMobilePanel();
         }
@@ -4709,7 +4729,6 @@ async function playPlaylistSong(index) {
         showNotification("播放失败，请稍后重试", "error");
     }
 }
-
 // 新增：滚动到当前播放的播放列表项目
 function scrollToCurrentPlaylistItem() {
     if (!dom.playlistItems || state.currentPlaylist !== "playlist" || state.currentTrackIndex < 0) {
@@ -4916,17 +4935,17 @@ async function playSong(song, options = {}) {
 
         // 处理进度条逻辑
         if (!preserveProgress) {
-            state.currentPlaybackTime = 0;
-            state.lastSavedPlaybackTime = 0;
-            safeSetLocalStorage('currentPlaybackTime', '0');
-            dom.progressBar.value = 0;
-            dom.currentTimeDisplay.textContent = "00:00";
-            updateProgressBarBackground(0, Number(dom.progressBar.max));
-        } else if (startTime > 0) {
-            state.currentPlaybackTime = startTime;
-            state.lastSavedPlaybackTime = startTime;
-        }
-        state.pendingSeekTime = startTime > 0 ? startTime : null;
+		    state.currentPlaybackTime = 0;
+		    state.lastSavedPlaybackTime = 0;
+		    safeSetLocalStorage('currentPlaybackTime', '0');
+		    dom.progressBar.value = 0;
+		    dom.currentTimeDisplay.textContent = "00:00";
+		    updateProgressBarBackground(0, Number(dom.progressBar.max));
+		} else if (startTime > 0) {
+		    state.currentPlaybackTime = startTime;
+		    state.lastSavedPlaybackTime = startTime;
+		}
+		state.pendingSeekTime = startTime > 0 ? startTime : null;
 
         // [修改] 尝试加载音频
         let selectedAudioUrl = null;
@@ -5098,23 +5117,32 @@ async function autoPlayNext() {
     try {
         // 单曲循环模式
         if (state.playMode === "single") {
-            debugLog("单曲循环模式，重新播放当前歌曲");
-            dom.audioPlayer.currentTime = 0;
-            
-            // 更新 Media Session 状态
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'playing';
-                updatePositionState();
-            }
-            
-            const playPromise = dom.audioPlayer.play();
-            if (playPromise !== undefined) {
-                await playPromise.catch(error => {
-                    console.error('单曲循环播放失败:', error);
-                });
-            }
-            return;
-        }
+		    debugLog("单曲循环模式，重新播放当前歌曲");
+		    // 单曲循环时，从0开始播放
+		    dom.audioPlayer.currentTime = 0;
+		    state.currentPlaybackTime = 0;
+		    state.lastSavedPlaybackTime = 0;
+		    safeSetLocalStorage('currentPlaybackTime', '0');
+		    
+		    // 更新进度条显示
+		    dom.progressBar.value = 0;
+		    dom.currentTimeDisplay.textContent = "00:00";
+		    updateProgressBarBackground(0, Number(dom.progressBar.max));
+		    
+		    // 更新 Media Session 状态
+		    if ('mediaSession' in navigator) {
+		        navigator.mediaSession.playbackState = 'playing';
+		        updatePositionState();
+		    }
+		    
+		    const playPromise = dom.audioPlayer.play();
+		    if (playPromise !== undefined) {
+		        await playPromise.catch(error => {
+		            console.error('单曲循环播放失败:', error);
+		        });
+		    }
+		    return;
+		}
 
         // 重置播放监控状态
         stopPlaybackMonitoring();
@@ -5369,16 +5397,24 @@ function playNext() {
         updateCurrentSongInfo(nextSong, { loadArtwork: true });
     }
 
-    // 根据播放列表类型播放
+    // 根据播放列表类型播放，新歌从0开始
     if (state.currentPlaylist === "playlist") {
         playPlaylistSong(nextIndex);
     } else if (state.currentPlaylist === "online") {
         playOnlineSong(nextIndex);
     } else if (state.currentPlaylist === "search") {
-        playSearchResult(nextIndex);
+        // 直接调用 playSong，新歌从0开始
+        const song = playlist[nextIndex];
+        if (song) {
+            playSong(song, {
+                autoplay: true,
+                startTime: 0,
+                preserveProgress: false,  // 新歌从0开始
+                isRetry: false
+            });
+        }
     }
 }
-
 
 function playPrevious() {
     debugLog("playPrevious 被调用");
@@ -5426,27 +5462,44 @@ function playPrevious() {
         updateCurrentSongInfo(prevSong, { loadArtwork: true });
     }
 
-    // 根据播放列表类型播放
+    // 根据播放列表类型播放，新歌从0开始
     if (state.currentPlaylist === "playlist") {
         playPlaylistSong(prevIndex);
     } else if (state.currentPlaylist === "online") {
         playOnlineSong(prevIndex);
     } else if (state.currentPlaylist === "search") {
-        playSearchResult(prevIndex);
+        const song = playlist[prevIndex];
+        if (song) {
+            playSong(song, {
+                autoplay: true,
+                startTime: 0,
+                preserveProgress: false,  // 新歌从0开始
+                isRetry: false
+            });
+        }
     }
 }
-
 
 // 修复：在线音乐播放函数
 async function playOnlineSong(index) {
     const song = state.onlineSongs[index];
     if (!song) return;
 
+    const isSameSong = state.currentSong && 
+                      state.currentSong.id === song.id && 
+                      state.currentSong.source === song.source;
+    
     state.currentTrackIndex = index;
     state.currentPlaylist = "online";
 
     try {
-        await playSong(song);
+        await playSong(song, {
+            autoplay: true,
+            startTime: isSameSong ? state.currentPlaybackTime : 0,
+            preserveProgress: isSameSong,
+            isRetry: false
+        });
+        
         updateOnlineHighlight();
     } catch (error) {
         console.error("播放失败:", error);
