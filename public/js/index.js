@@ -3588,7 +3588,7 @@ async function performSearch(isLiveSearch = false) {
         state.searchKeyword = query;
         state.searchSource = source;
         state.searchResults = [];
-        state.hasMoreResults = true;
+        state.hasMoreResults = true; // 确保重置为 true
         state.renderedSearchCount = 0;
         resetSelectedSearchResults();
         const listContainer = dom.searchResultsList || dom.searchResults;
@@ -3614,17 +3614,14 @@ async function performSearch(isLiveSearch = false) {
         const results = await API.search(query, source, SEARCH_PAGE_SIZE, state.searchPage);
         debugLog(`API返回结果数量: ${results.length}`);
 
-        if (state.searchPage === 1) {
-            state.searchResults = results;
-        } else {
-            state.searchResults = [...state.searchResults, ...results];
-        }
-
-        state.hasMoreResults = results.length >= 20;
+        state.searchResults = results; // 总是直接设置，不要合并
+        
+        // 根据结果数量判断是否还有更多
+        state.hasMoreResults = results.length >= SEARCH_PAGE_SIZE;
 
         // 显示搜索结果
         displaySearchResults(results, {
-            reset: state.searchPage === 1,
+            reset: true,
             totalCount: state.searchResults.length,
         });
         debugLog(`搜索完成: 总共显示 ${state.searchResults.length} 个结果`);
@@ -3653,54 +3650,51 @@ async function loadMoreResults() {
         return;
     }
 
-    // 获取当前按钮（如果存在）
+    // 获取当前按钮
     const container = dom.searchResultsList || dom.searchResults;
     let loadMoreBtn = document.getElementById("loadMoreBtn");
     
-    // 如果按钮不存在但我们认为还有结果，尝试在容器底部查找或重新创建
+    // 如果按钮不存在，尝试创建
     if (!loadMoreBtn && container) {
-         // 检查容器最后一个元素
-         const lastChild = container.lastElementChild;
-         if (lastChild && lastChild.id === "loadMoreBtn") {
-             loadMoreBtn = lastChild;
-         }
+        loadMoreBtn = createLoadMoreButton();
+        container.appendChild(loadMoreBtn);
     }
 
     if (!loadMoreBtn) {
-        debugLog("找不到加载更多按钮，尝试重新渲染");
-        if (container) {
-            container.appendChild(createLoadMoreButton());
-            loadMoreBtn = document.getElementById("loadMoreBtn");
-        }
-        if (!loadMoreBtn) return; // 仍然无法获取按钮，放弃
+        debugLog("无法创建加载更多按钮");
+        return;
     }
 
     try {
         loadMoreBtn.disabled = true;
         loadMoreBtn.innerHTML = '<span class="loader"></span><span>加载中...</span>';
 
-         state.searchPage++;
+        state.searchPage++;
         debugLog(`加载第 ${state.searchPage} 页结果`);
 
         const source = normalizeSource(state.searchSource);
         state.searchSource = source;
         safeSetLocalStorage("searchSource", source);
+        
         const results = await API.search(state.searchKeyword, source, SEARCH_PAGE_SIZE, state.searchPage);
 
         if (results && results.length > 0) {
             state.searchResults = [...state.searchResults, ...results];
-            // 修改：放宽判定逻辑，只要返回数量 >= 5 就认为还有更多
-            state.hasMoreResults = results.length >= 10;
             
+            // 修改这里的判断逻辑：只有返回结果数量等于请求数量时才认为还有更多
+            state.hasMoreResults = results.length >= SEARCH_PAGE_SIZE;
+            
+            // 显示新结果，但不重置
             displaySearchResults(results, {
                 totalCount: state.searchResults.length,
             });
             debugLog(`加载完成: 新增 ${results.length} 个结果`);
         } else {
             state.hasMoreResults = false;
-            // 移除按钮
-            loadMoreBtn.remove();
-            showNotification("没有更多结果了");
+            // 显示最终结果并移除按钮
+            displaySearchResults([], {
+                totalCount: state.searchResults.length,
+            });
             debugLog("没有更多结果");
         }
     } catch (error) {
@@ -3708,16 +3702,12 @@ async function loadMoreResults() {
         showNotification("加载失败，请稍后重试", "error");
         state.searchPage--; // 回退页码
         
-        // 恢复按钮状态 (重新创建一个新的，因为displaySearchResults可能已经把它弄乱了，或者只是恢复状态)
-        const currentBtn = document.getElementById("loadMoreBtn");
-        if (currentBtn) {
-            currentBtn.disabled = false;
-            currentBtn.innerHTML = '<i class="fas fa-plus"></i><span>加载更多</span>';
-        } else if (container) {
-             container.appendChild(createLoadMoreButton());
-        }
+        // 恢复按钮状态
+        loadMoreBtn.disabled = false;
+        loadMoreBtn.innerHTML = '<i class="fas fa-plus"></i><span>加载更多</span>';
     }
 }
+
 function createSearchResultItem(song, index) {
     const item = document.createElement("div");
     item.className = "search-result-item";
@@ -3970,7 +3960,6 @@ function createLoadMoreButton() {
 }
 
 function displaySearchResults(newItems, options = {}) {
-    dom.playlist.classList.remove("empty");
     const container = dom.searchResultsList || dom.searchResults;
     if (!container) {
         return;
@@ -3999,13 +3988,15 @@ function displaySearchResults(newItems, options = {}) {
         }
     }
 
-    // 1. 移除旧的按钮 (如果存在)
+    // 1. 如果这是追加内容，不要移除现有按钮
     const existingLoadMore = container.querySelector("#loadMoreBtn");
-    if (existingLoadMore) {
+    
+    // 2. 只在重置模式时移除按钮
+    if (reset && existingLoadMore) {
         existingLoadMore.remove();
     }
 
-    // 2. 追加新结果
+    // 3. 追加新结果
     const itemsToAppend = Array.isArray(newItems) ? newItems : [];
 
     if (itemsToAppend.length === 0 && state.renderedSearchCount === 0 && totalCount === 0) {
@@ -4025,16 +4016,29 @@ function displaySearchResults(newItems, options = {}) {
         state.renderedSearchCount += itemsToAppend.length;
     }
 
-    // 3. 追加加载更多按钮 (如果需要)
-    // 只有当还有更多结果时才添加
-    if (state.hasMoreResults) {
-        container.appendChild(createLoadMoreButton());
+    // 4. 只有在重置模式或按钮不存在时才添加加载更多按钮
+    const shouldAddLoadMore = state.hasMoreResults && (!existingLoadMore || reset);
+    
+    if (shouldAddLoadMore) {
+        // 移除可能存在的旧按钮
+        if (existingLoadMore) {
+            existingLoadMore.remove();
+        }
+        
+        const loadMoreBtn = createLoadMoreButton();
+        container.appendChild(loadMoreBtn);
+        debugLog("添加加载更多按钮");
+    } else if (!state.hasMoreResults && existingLoadMore) {
+        // 没有更多结果时移除按钮
+        existingLoadMore.remove();
+        debugLog("没有更多结果，移除加载更多按钮");
     }
 
     const appendedCount = itemsToAppend.length;
     const totalRendered = state.renderedSearchCount;
-    debugLog(`显示搜索结果: 新增 ${appendedCount} 个结果, 总计 ${totalRendered} 个, 加载更多按钮: ${state.hasMoreResults ? "显示" : "隐藏"}`);
+    debugLog(`显示搜索结果: 新增 ${appendedCount} 个结果, 总计 ${totalRendered} 个, 是否有更多结果: ${state.hasMoreResults ? "是" : "否"}`);
 }
+
 // 播放全部搜索结果
 async function playAllSearchResults() {
     if (state.searchResults.length === 0) {
