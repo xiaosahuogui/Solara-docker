@@ -1162,59 +1162,12 @@ body.mobile-view .search-btn {
     padding: 12px 18px;
 }
 
-/* 搜索结果区域 - 添加加载更多按钮 */
 body.mobile-view .search-results {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     width: min(100%, 400px);
     margin: 0 auto;
-    padding-bottom: 60px; /* 为加载更多按钮留出空间 */
-}
-
-/* 加载更多按钮样式 */
-body.mobile-view .load-more-btn {
-    position: sticky;
-    bottom: 0;
-    width: 100%;
-    padding: 16px 0;
-    background: var(--surface-panel-light);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    z-index: 100;
-}
-
-body.mobile-view .load-more-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--primary-color);
-}
-
-body.mobile-view .load-more-btn.loading {
-    color: var(--text-muted);
-    cursor: not-allowed;
-}
-
-body.mobile-view .load-more-btn.loading::after {
-    content: "";
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-left: 8px;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
 }
 
 /* 搜索结果项 - 深色卡片 */
