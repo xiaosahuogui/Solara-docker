@@ -3620,7 +3620,7 @@ async function performSearch(isLiveSearch = false) {
             state.searchResults = [...state.searchResults, ...results];
         }
 
-        state.hasMoreResults = results.length === 50;
+        state.hasMoreResults = results.length >= 20;
 
         // 显示搜索结果
         displaySearchResults(results, {
@@ -3976,6 +3976,7 @@ function displaySearchResults(newItems, options = {}) {
         }
     }
 
+    // 先移除旧的按钮，防止重复
     const existingLoadMore = container.querySelector("#loadMoreBtn");
     if (existingLoadMore) {
         existingLoadMore.remove();
@@ -3984,7 +3985,7 @@ function displaySearchResults(newItems, options = {}) {
     const itemsToAppend = Array.isArray(newItems) ? newItems : [];
 
     if (itemsToAppend.length === 0 && state.renderedSearchCount === 0 && totalCount === 0) {
-        container.innerHTML = "<div style=\"text-align: center; color: var(--text-secondary-color); padding: 20px;\">未找到相关歌曲</div>";
+        container.innerHTML = "<div style=\"text-align: center; color: var(--text-secondary); padding: 20px;\">未找到相关歌曲</div>";
         state.renderedSearchCount = 0;
         debugLog("显示搜索结果: 0 个结果, 无可用数据");
         return;
@@ -4000,6 +4001,7 @@ function displaySearchResults(newItems, options = {}) {
         state.renderedSearchCount += itemsToAppend.length;
     }
 
+    // 只要标记为有更多，就追加按钮
     if (state.hasMoreResults) {
         container.appendChild(createLoadMoreButton());
     }
