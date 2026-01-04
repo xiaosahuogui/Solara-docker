@@ -3,7 +3,6 @@ const fetch = require('node-fetch');
 const router = express.Router();
 
 const API_BASE_URL = "https://music-api.gdstudio.xyz/api.php";
-const KUWO_HOST_PATTERN = /(^|\.)kuwo\.cn$/i;
 const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control", "accept-ranges", "content-length", "content-range", "etag", "last-modified", "expires"];
 
 // CORS 头函数
@@ -25,29 +24,20 @@ router.options('/', (req, res) => {
   res.status(204).send();
 });
 
-function isAllowedKuwoHost(hostname) {
-  if (!hostname) return false;
-  return KUWO_HOST_PATTERN.test(hostname);
-}
-
-function normalizeKuwoUrl(rawUrl) {
+function normalizeUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
-    if (!isAllowedKuwoHost(parsed.hostname)) {
-      return null;
-    }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return null;
     }
-    parsed.protocol = 'http:';
     return parsed;
   } catch {
     return null;
   }
 }
 
-async function proxyKuwoAudio(targetUrl, req, res) {
-  const normalized = normalizeKuwoUrl(targetUrl);
+async function proxyAudio(targetUrl, req, res) {
+  const normalized = normalizeUrl(targetUrl);
   if (!normalized) {
     res.set(createCorsHeaders());
     return res.status(400).send('Invalid target');
@@ -57,9 +47,17 @@ async function proxyKuwoAudio(targetUrl, req, res) {
     method: req.method,
     headers: {
       'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
-      'Referer': 'https://www.kuwo.cn/',
     },
   };
+
+  // 智能 Referer 设置，防止防盗链拦截
+  if (normalized.hostname.includes('kuwo.cn')) {
+      init.headers['Referer'] = 'https://www.kuwo.cn/';
+  } else if (normalized.hostname.includes('126.net') || normalized.hostname.includes('163.com')) {
+      init.headers['Referer'] = 'https://music.163.com/';
+  } else if (normalized.hostname.includes('qq.com')) {
+      init.headers['Referer'] = 'https://y.qq.com/';
+  }
 
   const rangeHeader = req.headers['range'];
   if (rangeHeader) {
@@ -134,7 +132,7 @@ router.get('/', async (req, res) => {
   const target = req.query.target;
 
   if (target) {
-    return proxyKuwoAudio(target, req, res);
+    return proxyAudio(target, req, res);
   }
 
   return proxyApiRequest(req, res);
