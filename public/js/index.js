@@ -62,9 +62,9 @@ const dom = {
 };
 
 // 新增搜索配置常量
-const SEARCH_PAGE_SIZE = 50; // 每页搜索结果数量，增加到100条
-const MAX_RADAR_OFFSET = 100; // 最大雷达偏移量，对应2页结果（2×50=100条）
-const MAX_SEARCH_PAGES = 2; // 最大搜索页数
+const SEARCH_PAGE_SIZE = 30; // 每页搜索结果数量，增加到100条
+const MAX_RADAR_OFFSET = 90; // 最大雷达偏移量，对应3页结果（3×30=90条）
+const MAX_SEARCH_PAGES = 3; // 最大搜索页数
 
 // 在文件开头的常量定义部分添加音质等级配置
 const QUALITY_LEVELS = [
@@ -850,36 +850,6 @@ const API = {
             debugLog(`API请求: ${url}`);
             const data = await API.fetchJson(url);
             debugLog(`API响应: 获取到 ${Array.isArray(data) ? data.length : 0} 条结果`);
-
-            if (!Array.isArray(data)) throw new Error("搜索结果格式错误");
-
-            return data.map(song => ({
-                id: song.id,
-                name: song.name,
-                artist: song.artist,
-                album: song.album,
-                pic_id: song.pic_id,
-                url_id: song.url_id,
-                lyric_id: song.lyric_id,
-                source: song.source,
-            }));
-        } catch (error) {
-            debugLog(`API错误: ${error.message}`);
-            throw error;
-        }
-    },
-
-    
-
-    
-    search: async (keyword, source = "kuwo", count = 50, page = 1) => {
-        const signature = API.generateSignature();
-        const url = `${API.baseUrl}?types=search&source=${source}&name=${encodeURIComponent(keyword)}&count=${count}&pages=${page}&s=${signature}`;
-
-        try {
-            debugLog(`API请求: ${url}`);
-            const data = await API.fetchJson(url);
-            debugLog(`API响应: ${JSON.stringify(data).substring(0, 200)}...`);
 
             if (!Array.isArray(data)) throw new Error("搜索结果格式错误");
 
@@ -5869,43 +5839,46 @@ async function downloadSong(song, quality = "320") {
 
         const audioUrl = API.getSongUrl(song, quality);
         const audioData = await API.fetchJson(audioUrl);
+        const targetUrl = extractUrlFromData(audioData);
 
-        if (audioData && audioData.url) {
-            const proxiedAudioUrl = buildAudioProxyUrl(audioData.url);
-            const preferredAudioUrl = preferHttpsUrl(audioData.url);
+        if (targetUrl) {
+            // 强制使用本地代理进行下载，以解决跨域和Referer限制，并支持 Blob 下载
+            const proxyUrl = `/proxy?target=${encodeURIComponent(targetUrl)}`;
+            
+            showNotification("正在下载歌曲文件...", "info");
 
-            if (proxiedAudioUrl !== audioData.url) {
-                debugLog(`下载链接已通过代理转换为 HTTPS: ${proxiedAudioUrl}`);
-            } else if (preferredAudioUrl !== audioData.url) {
-                debugLog(`下载链接由 HTTP 升级为 HTTPS: ${preferredAudioUrl}`);
-            }
-
-            const downloadUrl = proxiedAudioUrl || preferredAudioUrl || audioData.url;
+            const response = await fetch(proxyUrl);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
 
             const link = document.createElement("a");
-            link.href = downloadUrl;
-            const preferredExtension =
-                quality === "999" ? "flac" : quality === "740" ? "ape" : "mp3";
+            link.href = blobUrl;
+            
+            // 确定文件扩展名
+            const preferredExtension = quality === "999" ? "flac" : quality === "740" ? "ape" : "mp3";
             const fileExtension = (() => {
                 try {
-                    const url = new URL(audioData.url);
+                    const url = new URL(targetUrl);
                     const pathname = url.pathname || "";
                     const match = pathname.match(/\.([a-z0-9]+)$/i);
-                    if (match) {
-                        return match[1];
-                    }
-                } catch (error) {
-                    console.warn("无法从下载链接中解析扩展名:", error);
-                }
+                    if (match) return match[1];
+                } catch (e) {}
                 return preferredExtension;
             })();
-            link.download = `${song.name} - ${Array.isArray(song.artist) ? song.artist.join(", ") : song.artist}.${fileExtension}`;
-            link.target = "_blank";
+
+            // 格式化文件名：歌名 - 歌手.ext
+            const artistName = Array.isArray(song.artist) ? song.artist.join(", ") : (song.artist || "未知艺术家");
+            const filename = `${song.name} - ${artistName}.${fileExtension}`;
+            
+            link.download = filename;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
 
-            showNotification("下载已开始", "success");
+            showNotification("下载已完成", "success");
         } else {
             throw new Error("无法获取下载地址");
         }
@@ -6072,28 +6045,3 @@ window.getQualityState = function() {
         loadTimeElapsed: state.isWaitingForPlayback ? Date.now() - state.loadStartTime : 0
     };
 };
-
-window.forceLoadTimeout = function() {
-    if (state.currentSong && state.isWaitingForPlayback) {
-        debugLog("手动触发加载超时");
-        handleLoadTimeout();
-    } else {
-        debugLog("无法触发加载超时: 没有正在等待播放的歌曲");
-    }
-};
-
-// 添加配置选项到调试函数
-window.setLoadTimeout = function(timeoutMs) {
-    if (timeoutMs && timeoutMs > 0) {
-        state.maxLoadTime = timeoutMs;
-        debugLog(`设置加载超时时间为: ${timeoutMs}ms`);
-        return `加载超时时间已设置为 ${timeoutMs}ms`;
-    } else {
-        return `当前加载超时时间: ${state.maxLoadTime}ms`;
-    }
-};
-
-// ==== 应用初始化 ====
-// 替换原有的立即执行代码，改为调用initializeApp
-document.addEventListener('DOMContentLoaded', initializeApp);
-dom.audioPlayer.addEventListener("ended", autoPlayNext);
