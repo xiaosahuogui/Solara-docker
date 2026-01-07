@@ -5122,12 +5122,18 @@ async function autoPlayNext() {
         
         // 记录当前播放的歌曲ID，用于判断是否是同一首歌
         const currentSongId = state.currentSong ? `${state.currentSong.id}-${state.currentSong.source}` : null;
+        const currentIndexBeforeCheck = state.currentTrackIndex;
+        
+        debugLog(`自动播放前: 当前歌曲ID=${currentSongId}, 当前索引=${currentIndexBeforeCheck}, 播放列表长度=${state.playlistSongs.length}`);
         
         // 检查是否需要自动添加雷达歌曲
-        await checkAndAutoAddRadarSongs();
+        const radarAdded = await checkAndAutoAddRadarSongs();
+        debugLog(`雷达添加结果: ${radarAdded ? '已添加歌曲' : '未添加歌曲'}`);
 
         // 获取下一首歌曲
         const nextSong = getNextSong();
+        debugLog(`获取下一首歌曲: ${nextSong ? nextSong.name : '无'}`);
+
         if (!nextSong) {
             debugLog("没有找到下一首歌曲");
             showNotification("播放列表已结束", "info");
@@ -5156,22 +5162,10 @@ async function autoPlayNext() {
             );
             if (nextIndex !== -1) {
                 state.currentTrackIndex = nextIndex;
-            }
-        } else if (state.currentPlaylist === "online") {
-            const playlist = state.onlineSongs;
-            const nextIndex = playlist.findIndex(song => 
-                song.id === nextSong.id && song.source === nextSong.source
-            );
-            if (nextIndex !== -1) {
-                state.currentTrackIndex = nextIndex;
-            }
-        } else if (state.currentPlaylist === "search") {
-            const playlist = state.searchResults;
-            const nextIndex = playlist.findIndex(song => 
-                song.id === nextSong.id && song.source === nextSong.source
-            );
-            if (nextIndex !== -1) {
-                state.currentTrackIndex = nextIndex;
+                debugLog(`找到下一首索引: ${nextIndex}, 播放列表长度=${playlist.length}`);
+            } else {
+                debugLog(`未找到下一首歌曲在播放列表中, 回退到0`);
+                state.currentTrackIndex = 0;
             }
         }
 
@@ -5201,19 +5195,31 @@ async function autoPlayNext() {
 
         // 播放下一首
         if (state.currentPlaylist === "playlist") {
-            // 如果是同一首歌（例如雷达添加后位置没变），保留进度；否则从0开始
-            await playPlaylistSong(state.currentTrackIndex, isSameSong);
-        } else if (state.currentPlaylist === "online") {
-            await playOnlineSong(state.currentTrackIndex);
-        } else if (state.currentPlaylist === "search") {
-            const song = state.searchResults[state.currentTrackIndex];
-            if (song) {
-                await playSong(song, {
+            // 如果是雷达添加后的自动播放，并且是同一首歌，保留进度；否则从0开始
+            // 这里的关键是：雷达添加后，如果播放的还是同一首歌（位置没变），保留进度
+            // 如果播放的是新添加的歌曲，从0开始
+            if (isSameSong && radarAdded) {
+                debugLog(`雷达添加后播放同一首歌: ${nextSong.name}, 保留当前进度 ${state.currentPlaybackTime}`);
+                // 直接调用 playSong，保留进度
+                await playSong(nextSong, {
                     autoplay: true,
-                    startTime: 0, // 搜索结果的自动播放从0开始
+                    startTime: state.currentPlaybackTime,
+                    preserveProgress: true,
+                    isRetry: false
+                });
+                // 播放成功后更新高亮
+                updatePlaylistHighlight();
+            } else {
+                debugLog(`播放新歌或雷达添加的新歌: ${nextSong.name}, 从0开始`);
+                // 直接调用 playSong，从0开始
+                await playSong(nextSong, {
+                    autoplay: true,
+                    startTime: 0,
                     preserveProgress: false,
                     isRetry: false
                 });
+                // 播放成功后更新高亮
+                updatePlaylistHighlight();
             }
         }
 
@@ -5244,8 +5250,6 @@ async function autoPlayNext() {
     }
 }
 
-// 检查并自动添加雷达歌曲
-// 修复 checkAndAutoAddRadarSongs 函数，确保合并两个关键词的结果
 async function checkAndAutoAddRadarSongs() {
     if (state.currentPlaylist !== "playlist" || state.playlistSongs.length === 0) {
         debugLog(`checkAndAutoAddRadarSongs: 条件不满足 - currentPlaylist=${state.currentPlaylist}, playlistSongs.length=${state.playlistSongs.length}`);
@@ -5260,20 +5264,109 @@ async function checkAndAutoAddRadarSongs() {
         console.log(`播放列表即将结束，剩余 ${remainingSongs} 首歌曲，自动添加雷达歌曲`);
         
         try {
-            // ... [之前的雷达添加逻辑不变]
+            // 从备选关键词中随机选择两个不同的关键词
+            const shuffledKeywords = [...RADAR_KEYWORDS].sort(() => Math.random() - 0.5);
+            const keyword1 = shuffledKeywords[0];
+            let keyword2 = shuffledKeywords[1];
             
-            const songsToAdd = shuffledSongs.slice(0, 10);
+            // 确保两个关键词不同
+            if (keyword1 === keyword2 && shuffledKeywords.length > 2) {
+                keyword2 = shuffledKeywords[2];
+            }
             
-            if (songsToAdd.length > 0) {
-                state.playlistSongs = [...state.playlistSongs, ...songsToAdd];
-                renderPlaylist();
+            const randomOffset = Math.floor(Math.random() * MAX_RADAR_OFFSET);
+            state.radarOffset = randomOffset;
+            
+            debugLog(`自动添加雷达歌曲，使用关键词: "${keyword1}" 和 "${keyword2}", 随机偏移量: ${randomOffset}`);
+
+            // 使用两个关键词分别搜索
+            const [results1, results2] = await Promise.all([
+                API.search(keyword1, "netease", SEARCH_PAGE_SIZE, Math.floor(randomOffset / SEARCH_PAGE_SIZE) + 1).catch(() => []),
+                API.search(keyword2, "netease", SEARCH_PAGE_SIZE, Math.floor((randomOffset + SEARCH_PAGE_SIZE) % MAX_RADAR_OFFSET / SEARCH_PAGE_SIZE) + 1).catch(() => [])
+            ]);
+
+            // 合并两个搜索结果
+            const allResults = [];
+            if (Array.isArray(results1) && results1.length > 0) {
+                allResults.push(...results1);
+            }
+            if (Array.isArray(results2) && results2.length > 0) {
+                allResults.push(...results2);
+            }
+
+            // 去重搜索结果
+            const uniqueResults = [];
+            const seenKeys = new Set();
+            
+            for (const song of allResults) {
+                if (!song || !song.id) continue;
+                const key = `${song.source || 'netease'}:${song.id}`;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    uniqueResults.push(song);
+                }
+            }
+
+            console.log(`自动添加雷达: 关键词1 "${keyword1}" -> ${results1?.length || 0} 首, 关键词2 "${keyword2}" -> ${results2?.length || 0} 首`);
+            console.log(`自动添加雷达合并: 原始 ${allResults.length} 首 -> 去重后 ${uniqueResults.length} 首`);
+
+            // 应用屏蔽关键词过滤
+            const filteredResults = filterBlockedSongs(uniqueResults);
+            console.log(`自动添加雷达过滤: 去重后 ${uniqueResults.length} 首 -> 过滤后 ${filteredResults.length} 首`);
+
+            if (filteredResults.length > 0) {
+                const existingKeys = new Set(
+                    state.playlistSongs
+                        .map(getSongKey)
+                        .filter(key => typeof key === "string" && key !== "")
+                );
+
+                const uniqueSongs = [];
+                for (const song of filteredResults) {
+                    const key = getSongKey(song);
+                    if (!key || !existingKeys.has(key)) {
+                        uniqueSongs.push(song);
+                        if (key) {
+                            existingKeys.add(key);
+                        }
+                    }
+                }
+
+                console.log(`自动添加雷达去重: 过滤后 ${filteredResults.length} 首 -> 相对于播放列表去重后 ${uniqueSongs.length} 首`);
+
+                const shuffledSongs = [...uniqueSongs].sort(() => Math.random() - 0.5);
+                const songsToAdd = shuffledSongs.slice(0, 10);
                 
-                debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲`);
-                console.log(`自动添加雷达成功: 添加 ${songsToAdd.length} 首歌曲`);
-                
-                // 使用更简洁的通知
-                showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲`);
-                return true; // 返回true表示添加了歌曲
+                if (songsToAdd.length > 0) {
+                    // 保存当前歌曲信息，用于后续判断
+                    const currentSongBeforeAdd = state.currentSong;
+                    const currentTrackIndexBeforeAdd = state.currentTrackIndex;
+                    
+                    state.playlistSongs = [...state.playlistSongs, ...songsToAdd];
+                    renderPlaylist();
+                    
+                    const totalFiltered = uniqueResults.length - filteredResults.length;
+                    const existingFiltered = filteredResults.length - uniqueSongs.length;
+                    
+                    debugLog(`自动添加雷达歌曲成功: 添加 ${songsToAdd.length} 首歌曲`);
+                    debugLog(`  过滤: 屏蔽关键词 ${totalFiltered} 首, 播放列表已有 ${existingFiltered} 首`);
+                    debugLog(`  关键词: ${keyword1}, ${keyword2}, 随机偏移量: ${randomOffset}`);
+                    
+                    console.log(`自动添加雷达成功: 添加 ${songsToAdd.length} 首歌曲`);
+                    console.log(`  过滤: 屏蔽关键词 ${totalFiltered} 首, 播放列表已有 ${existingFiltered} 首`);
+                    
+                    // 使用更简洁的通知
+                    showNotification(`自动添加 ${songsToAdd.length} 首雷达歌曲`);
+                    
+                    // 更新当前索引（如果当前播放的是最后一首，索引需要调整）
+                    if (currentTrackIndexBeforeAdd === state.playlistSongs.length - songsToAdd.length - 1) {
+                        // 如果当前播放的是添加前的最后一首，索引不变
+                        state.currentTrackIndex = currentTrackIndexBeforeAdd;
+                        debugLog(`当前播放的是最后一首，索引保持不变: ${state.currentTrackIndex}`);
+                    }
+                    
+                    return true;
+                }
             }
         } catch (error) {
             console.error("自动添加雷达歌曲失败:", error);
@@ -5283,9 +5376,8 @@ async function checkAndAutoAddRadarSongs() {
         debugLog(`剩余歌曲 ${remainingSongs} 首，不需要自动添加雷达歌曲`);
     }
     
-    return false; // 返回false表示没有添加歌曲
+    return false;
 }
-
 // playNext 函数
 function playNext() {
     debugLog("playNext 被调用");
@@ -5451,14 +5543,10 @@ async function playOnlineSongFromZero(index) {
     }
 }
 
-async function playPlaylistSong(index, preserveProgressIfSame = false) {
+async function playPlaylistSong(index) {
     if (index < 0 || index >= state.playlistSongs.length) return;
 
     const song = state.playlistSongs[index];
-    const isSameSong = state.currentSong && 
-                      state.currentSong.id === song.id && 
-                      state.currentSong.source === song.source;
-    
     state.currentTrackIndex = index;
     state.currentPlaylist = "playlist";
 
@@ -5466,24 +5554,13 @@ async function playPlaylistSong(index, preserveProgressIfSame = false) {
         // 重置音质状态
         resetQualityState();
         
-        // 如果是同一首歌且允许保留进度，则保留进度；否则从0开始
-        if (isSameSong && preserveProgressIfSame) {
-            debugLog(`播放同一首歌: ${song.name}, 保留当前进度 ${state.currentPlaybackTime}`);
-            await playSong(song, {
-                autoplay: true,
-                startTime: state.currentPlaybackTime,
-                preserveProgress: true,
-                isRetry: false
-            });
-        } else {
-            debugLog(`播放新歌: ${song.name}, 从0开始`);
-            await playSong(song, {
-                autoplay: true,
-                startTime: 0,
-                preserveProgress: false,
-                isRetry: false
-            });
-        }
+        // 用户手动点击播放列表时，总是从0开始
+        await playSong(song, {
+            autoplay: true,
+            startTime: 0,  // 强制从0开始
+            preserveProgress: false,  // 不保留进度
+            isRetry: false
+        });
         
         updatePlaylistHighlight();
         // 播放后自动滚动到当前歌曲
