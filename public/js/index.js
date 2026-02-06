@@ -541,7 +541,7 @@ const SOURCE_OPTIONS = [
 // 备选关键词列表
 const RADAR_KEYWORDS = [
     // 歌曲风格
-    "流行", "摇滚", "民谣", "电子", "说唱", "R&B", 
+    "流行", "摇滚", "民谣", "说唱", "R&B", 
     "Blues", "Rock & Roll", "Bossa Nova", "Rap", 
     "Trap", "Future Bass", "Dubstep", "Techno", "House", "Progressive House", "Trance", "Ambient",
     "New Wave", "Synthwave", "Post-Punk", "Gothic", "Folk Rock", "Post-Rock", "Hardstyle", "J-Pop", "K-Pop",
